@@ -19,10 +19,11 @@ import (
 
 // Server is the REST API server for equipment communication.
 type Server struct {
-	logger  *slog.Logger
-	handler *gem.Handler
-	session *hsms.Session
-	mux     *http.ServeMux
+	logger      *slog.Logger
+	handler     *gem.Handler
+	session     *hsms.Session
+	mux         *http.ServeMux
+	bearerToken string // Empty = no auth required
 
 	// SSE event subscribers
 	sseClients   map[chan EventPayload]struct{}
@@ -37,16 +38,22 @@ type EventPayload struct {
 }
 
 // NewServer creates a REST API server.
-func NewServer(session *hsms.Session, handler *gem.Handler, logger *slog.Logger) *Server {
+// bearerToken: if non-empty, requires Authorization: Bearer <token> on all /api/* endpoints.
+func NewServer(session *hsms.Session, handler *gem.Handler, logger *slog.Logger, bearerToken ...string) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	token := ""
+	if len(bearerToken) > 0 {
+		token = bearerToken[0]
+	}
 	s := &Server{
-		logger:     logger,
-		handler:    handler,
-		session:    session,
-		mux:        http.NewServeMux(),
-		sseClients: make(map[chan EventPayload]struct{}),
+		logger:      logger,
+		handler:     handler,
+		session:     session,
+		mux:         http.NewServeMux(),
+		bearerToken: token,
+		sseClients:  make(map[chan EventPayload]struct{}),
 	}
 	s.registerRoutes()
 	return s
@@ -68,7 +75,29 @@ func (s *Server) registerRoutes() {
 
 // Handler returns the http.Handler for this server.
 func (s *Server) Handler() http.Handler {
-	return withCORS(s.mux)
+	h := http.Handler(s.mux)
+	if s.bearerToken != "" {
+		h = s.withAuth(h)
+	}
+	return withCORS(h)
+}
+
+func (s *Server) withAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Health endpoint is always public
+		if r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		auth := r.Header.Get("Authorization")
+		expected := "Bearer " + s.bearerToken
+		if auth != expected {
+			writeError(w, http.StatusUnauthorized, "invalid or missing bearer token")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // BroadcastEvent sends an event to all SSE subscribers.

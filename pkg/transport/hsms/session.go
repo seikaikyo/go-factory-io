@@ -2,6 +2,7 @@ package hsms
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dashfactory/go-factory-io/pkg/security"
 	"github.com/dashfactory/go-factory-io/pkg/transport"
 )
 
@@ -34,6 +36,10 @@ type Session struct {
 	// incoming data messages
 	inbound chan *Message
 
+	// security
+	rateLimiter *security.RateLimiter
+	connStart   time.Time
+
 	// lifecycle
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -51,6 +57,9 @@ func NewSession(config Config, logger *slog.Logger) *Session {
 		pending: make(map[uint32]chan *Message),
 		inbound: make(chan *Message, 256),
 		done:    make(chan struct{}),
+	}
+	if config.MaxMessageRate > 0 {
+		s.rateLimiter = security.NewRateLimiter(config.MaxMessageRate, config.MaxMessageRate)
 	}
 	s.state.Store(int32(transport.StateDisconnected))
 	return s
@@ -101,21 +110,49 @@ func (s *Session) startLoops() {
 }
 
 func (s *Session) connectActive(ctx context.Context) error {
-	s.logger.Info("HSMS connecting", "address", s.config.Address, "role", "Active")
+	s.logger.Info("HSMS connecting", "address", s.config.Address, "role", "Active",
+		"tls", s.config.TLSConfig != nil)
 	dialer := net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "tcp", s.config.Address)
 	if err != nil {
 		return fmt.Errorf("hsms: dial %s: %w", s.config.Address, err)
 	}
+
+	// TLS upgrade (IEC 62443 SR 4.1)
+	if s.config.TLSConfig != nil {
+		tlsConn := tls.Client(conn, s.config.TLSConfig)
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			conn.Close()
+			if s.config.Auditor != nil {
+				s.config.Auditor.AuthFailed(s.config.Address, "TLS handshake: "+err.Error())
+			}
+			return fmt.Errorf("hsms: TLS handshake: %w", err)
+		}
+		conn = tlsConn
+		if s.config.Auditor != nil {
+			s.config.Auditor.TLSHandshakeOK(s.config.Address)
+		}
+	}
+
 	s.conn = conn
+	s.connStart = time.Now()
 	s.logger.Info("HSMS TCP connected", "remote", conn.RemoteAddr())
 	return nil
 }
 
 func (s *Session) listenPassive(ctx context.Context) error {
-	s.logger.Info("HSMS listening", "address", s.config.Address, "role", "Passive")
-	lc := net.ListenConfig{}
-	listener, err := lc.Listen(ctx, "tcp", s.config.Address)
+	s.logger.Info("HSMS listening", "address", s.config.Address, "role", "Passive",
+		"tls", s.config.TLSConfig != nil)
+
+	var listener net.Listener
+	var err error
+
+	if s.config.TLSConfig != nil {
+		listener, err = tls.Listen("tcp", s.config.Address, s.config.TLSConfig)
+	} else {
+		lc := net.ListenConfig{}
+		listener, err = lc.Listen(ctx, "tcp", s.config.Address)
+	}
 	if err != nil {
 		return fmt.Errorf("hsms: listen %s: %w", s.config.Address, err)
 	}
@@ -132,10 +169,70 @@ func (s *Session) acceptAndRun(ctx context.Context) {
 		}
 		return
 	}
+
+	// IP allowlist check (IEC 62443 FR5)
+	if len(s.config.AllowedPeers) > 0 {
+		remoteIP := extractIP(conn.RemoteAddr())
+		if !isAllowed(remoteIP, s.config.AllowedPeers) {
+			if s.config.Auditor != nil {
+				s.config.Auditor.ConnectionRejected(conn.RemoteAddr().String(), "IP not in allowlist")
+			}
+			s.logger.Warn("HSMS connection rejected: IP not in allowlist", "remote", conn.RemoteAddr())
+			conn.Close()
+			// Continue accepting next connection
+			go s.acceptAndRun(ctx)
+			return
+		}
+	}
+
 	s.conn = conn
+	s.connStart = time.Now()
 	s.state.Store(int32(transport.StateConnected))
 	s.logger.Info("HSMS TCP accepted", "remote", conn.RemoteAddr())
 	s.startLoops()
+
+	// Session TTL enforcement (NIST SP 800-82)
+	if s.config.SessionTTL > 0 {
+		go s.sessionTTLLoop(ctx)
+	}
+}
+
+func extractIP(addr net.Addr) net.IP {
+	switch a := addr.(type) {
+	case *net.TCPAddr:
+		return a.IP
+	default:
+		host, _, _ := net.SplitHostPort(addr.String())
+		return net.ParseIP(host)
+	}
+}
+
+func isAllowed(ip net.IP, allowlist []net.IP) bool {
+	for _, allowed := range allowlist {
+		if allowed.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Session) sessionTTLLoop(ctx context.Context) {
+	timer := time.NewTimer(s.config.SessionTTL)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+		if s.config.Auditor != nil {
+			remote := "unknown"
+			if s.conn != nil {
+				remote = s.conn.RemoteAddr().String()
+			}
+			s.config.Auditor.SessionExpired(remote, time.Since(s.connStart))
+		}
+		s.logger.Info("HSMS session TTL expired, closing")
+		s.Close()
+	}
 }
 
 // Addr returns the listener address (useful for Passive mode with port 0).
@@ -347,8 +444,30 @@ func (s *Session) readLoop(ctx context.Context) {
 				s.logger.Warn("HSMS connection closed by peer")
 				return
 			}
+			// Log malformed messages as security events
+			if s.config.Auditor != nil {
+				remote := "unknown"
+				if s.conn != nil {
+					remote = s.conn.RemoteAddr().String()
+				}
+				s.config.Auditor.MalformedMessage(remote, err)
+			}
 			s.logger.Error("HSMS read error", "error", err)
 			return
+		}
+
+		// Rate limit check (IEC 62443 FR7)
+		if s.rateLimiter != nil && !s.rateLimiter.Allow() {
+			remote := "unknown"
+			if s.conn != nil {
+				remote = s.conn.RemoteAddr().String()
+			}
+			if s.config.Auditor != nil {
+				s.config.Auditor.RateLimited(remote, s.rateLimiter.Rate())
+			}
+			s.logger.Warn("HSMS rate limited, dropping message",
+				"remote", remote, "rate", s.rateLimiter.Rate())
+			continue
 		}
 
 		s.handleMessage(ctx, msg)
@@ -364,6 +483,11 @@ func (s *Session) readMessage() (*Message, error) {
 	msgLen := binary.BigEndian.Uint32(lenBuf)
 	if msgLen < headerLen {
 		return nil, fmt.Errorf("hsms: message length %d too small", msgLen)
+	}
+	// Max message size check (prevent OOM)
+	maxSize := s.config.maxMessageSize()
+	if int(msgLen) > maxSize {
+		return nil, fmt.Errorf("hsms: message length %d exceeds max %d", msgLen, maxSize)
 	}
 
 	// Read the rest of the message

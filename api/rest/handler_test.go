@@ -302,3 +302,70 @@ func TestResponseFormat(t *testing.T) {
 		t.Error("missing 'error' field")
 	}
 }
+
+// --- Bearer Token Auth Tests ---
+
+func setupAuthServer(t *testing.T) *Server {
+	t.Helper()
+	logger := slog.Default()
+	cfg := hsms.DefaultConfig("127.0.0.1:0", hsms.RolePassive, 1)
+	session := hsms.NewSession(cfg, logger)
+	handler := gem.NewHandler(session, 1, "TEST-EQ", "1.0.0", logger)
+	handler.Variables().DefineSV(&gem.StatusVariable{
+		SVID: 1001, Name: "WaferCount", Value: uint32(42), Units: "pcs",
+	})
+	return NewServer(session, handler, logger, "test-secret-token")
+}
+
+func doAuthRequest(t *testing.T, srv *Server, method, path, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
+}
+
+func TestAuthHealthPublic(t *testing.T) {
+	srv := setupAuthServer(t)
+	// Health should be accessible without token
+	w := doAuthRequest(t, srv, "GET", "/health", "")
+	if w.Code != 200 {
+		t.Errorf("health without token: status %d, want 200", w.Code)
+	}
+}
+
+func TestAuthRequiredForAPI(t *testing.T) {
+	srv := setupAuthServer(t)
+	// API without token should return 401
+	w := doAuthRequest(t, srv, "GET", "/api/sv", "")
+	if w.Code != 401 {
+		t.Errorf("API without token: status %d, want 401", w.Code)
+	}
+}
+
+func TestAuthWrongToken(t *testing.T) {
+	srv := setupAuthServer(t)
+	w := doAuthRequest(t, srv, "GET", "/api/sv", "wrong-token")
+	if w.Code != 401 {
+		t.Errorf("API with wrong token: status %d, want 401", w.Code)
+	}
+}
+
+func TestAuthCorrectToken(t *testing.T) {
+	srv := setupAuthServer(t)
+	w := doAuthRequest(t, srv, "GET", "/api/sv", "test-secret-token")
+	if w.Code != 200 {
+		t.Errorf("API with correct token: status %d, want 200", w.Code)
+	}
+}
+
+func TestAuthStatusEndpoint(t *testing.T) {
+	srv := setupAuthServer(t)
+	w := doAuthRequest(t, srv, "GET", "/api/status", "test-secret-token")
+	if w.Code != 200 {
+		t.Errorf("status with token: status %d, want 200", w.Code)
+	}
+}
