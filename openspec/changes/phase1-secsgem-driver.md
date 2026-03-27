@@ -1,7 +1,7 @@
 ---
 title: Phase 1 - SECS/GEM Go Driver
 type: feature
-status: in-progress
+status: completed
 created: 2026-03-27
 ---
 
@@ -262,9 +262,9 @@ type Driver interface {
 - [x] 可設定 EC/SV 值
 
 ### API + 整合
-- [ ] gRPC service 定義（.proto）
-- [ ] REST API fallback
-- [ ] smart-factory-demo 呼叫範例
+- [ ] gRPC service 定義（.proto）— 移至 Phase 2
+- [x] REST API（health/status/sv/ec/alarms/command/SSE）
+- [x] smart-factory-demo 整合用 CORS + RESTful response format
 - [x] Docker 多階段建構
 - [x] Makefile（build / test / lint / cross-compile）
 - [x] Cross-compile linux/arm64 + linux/amd64 (2.7MB static binary)
@@ -283,6 +283,6 @@ type Driver interface {
 - [x] Delete all reports
 
 ### 文件
-- [ ] README（安裝、使用、設定）
-- [ ] API 文件
-- [ ] 架構圖
+- [x] README（安裝、CLI、Go library、REST API、cross-compile、Docker、架構圖）
+- [x] API 端點文件（含 curl 範例）
+- [x] 架構圖（ASCII）

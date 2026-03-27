@@ -11,11 +11,13 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/dashfactory/go-factory-io/api/rest"
 	"github.com/dashfactory/go-factory-io/examples/simulator"
 	"github.com/dashfactory/go-factory-io/pkg/driver/gem"
 	"github.com/dashfactory/go-factory-io/pkg/message/secs2"
@@ -56,7 +58,8 @@ Commands:
 
 func runSimulator(logger *slog.Logger) {
 	fs := flag.NewFlagSet("simulate", flag.ExitOnError)
-	addr := fs.String("addr", ":5000", "Listen address")
+	addr := fs.String("addr", ":5000", "HSMS listen address")
+	apiAddr := fs.String("api", ":8080", "REST API listen address")
 	sessionID := fs.Int("session", 1, "Session ID")
 	model := fs.String("model", "SIM-EQUIP-01", "Equipment model name")
 	version := fs.String("version", "1.0.0", "Software revision")
@@ -80,10 +83,24 @@ func runSimulator(logger *slog.Logger) {
 		os.Exit(1)
 	}
 
-	logger.Info("Simulator running", "address", eq.Addr())
+	// Start REST API
+	apiServer := rest.NewServer(eq.Session(), eq.Handler(), logger)
+	httpSrv := &http.Server{Addr: *apiAddr, Handler: apiServer.Handler()}
+	go func() {
+		logger.Info("REST API listening", "address", *apiAddr)
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("REST API error", "error", err)
+		}
+	}()
+
+	logger.Info("Simulator running",
+		"hsms", eq.Addr(),
+		"api", *apiAddr,
+	)
 	logger.Info("Press Ctrl+C to stop")
 
 	waitForSignal(cancel)
+	httpSrv.Shutdown(context.Background())
 	eq.Stop()
 }
 
