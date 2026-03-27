@@ -21,6 +21,7 @@ import (
 	"github.com/dashfactory/go-factory-io/examples/simulator"
 	"github.com/dashfactory/go-factory-io/pkg/driver/gem"
 	"github.com/dashfactory/go-factory-io/pkg/message/secs2"
+	"github.com/dashfactory/go-factory-io/pkg/metrics"
 	"github.com/dashfactory/go-factory-io/pkg/transport/hsms"
 )
 
@@ -83,11 +84,17 @@ func runSimulator(logger *slog.Logger) {
 		os.Exit(1)
 	}
 
-	// Start REST API
+	// Start REST API + Prometheus metrics
 	apiServer := rest.NewServer(eq.Session(), eq.Handler(), logger)
-	httpSrv := &http.Server{Addr: *apiAddr, Handler: apiServer.Handler()}
+	collector := metrics.NewCollector(*model)
+
+	mux := http.NewServeMux()
+	mux.Handle("/", apiServer.Handler())
+	mux.Handle("/metrics", collector.Handler())
+
+	httpSrv := &http.Server{Addr: *apiAddr, Handler: mux}
 	go func() {
-		logger.Info("REST API listening", "address", *apiAddr)
+		logger.Info("REST API + metrics listening", "address", *apiAddr)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("REST API error", "error", err)
 		}
@@ -96,6 +103,7 @@ func runSimulator(logger *slog.Logger) {
 	logger.Info("Simulator running",
 		"hsms", eq.Addr(),
 		"api", *apiAddr,
+		"metrics", *apiAddr+"/metrics",
 	)
 	logger.Info("Press Ctrl+C to stop")
 
