@@ -192,8 +192,8 @@ func (s *Session) Send(ctx context.Context, data []byte) error {
 }
 
 // SendMessage sends a complete HSMS message and optionally waits for a reply.
-// If the message WBit is set and it's a primary message, it waits for the reply
-// with the T3 timeout.
+// For data messages: waits if WBit is set and it's a primary message (T3 timeout).
+// For control messages (Select/Deselect/Linktest req): always waits for response (T6 timeout).
 func (s *Session) SendMessage(ctx context.Context, msg *Message) (*Message, error) {
 	if s.State() != transport.StateSelected && msg.Header.SType == STypeDataMessage {
 		return nil, fmt.Errorf("hsms: cannot send data in state %s", s.State())
@@ -203,7 +203,16 @@ func (s *Session) SendMessage(ctx context.Context, msg *Message) (*Message, erro
 		msg.Header.SystemID = s.nextSystemID.Add(1)
 	}
 
-	if msg.Header.WBit && msg.Header.Function%2 == 1 {
+	// Control messages that expect a response
+	switch msg.Header.SType {
+	case STypeLinktestReq, STypeDeselectReq:
+		return s.sendAndWait(ctx, msg, s.config.T6)
+	case STypeSelectReq:
+		return s.sendAndWait(ctx, msg, s.config.T6)
+	}
+
+	// Data messages with WBit + primary function
+	if msg.Header.SType == STypeDataMessage && msg.Header.WBit && msg.Header.Function%2 == 1 {
 		return s.sendAndWait(ctx, msg, s.config.T3)
 	}
 

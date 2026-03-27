@@ -227,44 +227,60 @@ type Driver interface {
 ## Checklist
 
 ### HSMS 傳輸層
-- [ ] TCP Active mode 連線
-- [ ] TCP Passive mode 監聽
-- [ ] Select.req / Select.rsp
-- [ ] Deselect.req / Deselect.rsp
-- [ ] Linktest.req / Linktest.rsp
-- [ ] Separate
-- [ ] T3/T5/T6/T7/T8 timeout
-- [ ] 斷線自動重連（exponential backoff）
-- [ ] 單元測試覆蓋率 > 80%
+- [x] TCP Active mode 連線
+- [x] TCP Passive mode 監聽
+- [x] Select.req / Select.rsp
+- [x] Deselect.req / Deselect.rsp
+- [x] Linktest.req / Linktest.rsp
+- [x] Separate
+- [x] T3/T5/T6/T7/T8 timeout
+- [x] 斷線自動重連（exponential backoff）
+- [x] 單元測試覆蓋率 > 80%
 
 ### SECS-II 編解碼
-- [ ] 所有資料型別 encode/decode
-- [ ] Nested List 遞迴處理
-- [ ] Stream/Function 路由
-- [ ] 邊界測試（空 list、最大深度、溢位）
-- [ ] Benchmark > 100K msg/sec
+- [x] 所有資料型別 encode/decode
+- [x] Nested List 遞迴處理
+- [x] Stream/Function 路由
+- [x] 邊界測試（空 list、最大深度、溢位）
+- [x] Benchmark > 100K msg/sec (實測 7M encode, 2.3M decode)
 
 ### GEM 狀態機
-- [ ] Communication State Model
-- [ ] Control State Model
-- [ ] EC 讀寫（S2F13-S2F16）
-- [ ] SV 讀取（S1F3/S1F4）
-- [ ] CE + Report 定義與綁定（S2F33-S2F38）
-- [ ] Event Report 發送（S6F11/S6F12）
-- [ ] 狀態轉移單元測試
+- [x] Communication State Model
+- [x] Control State Model
+- [x] EC 讀寫（S2F13-S2F16）
+- [x] SV 讀取（S1F3/S1F4）
+- [x] CE + Report 定義與綁定（S2F33-S2F38）
+- [x] Event Report 發送（S6F11/S6F12）
+- [x] Alarm 管理（S5F1/S5F3/S5F5/S5F7）
+- [x] Remote Command（S2F41/S2F42）
+- [x] 狀態轉移單元測試
 
 ### 設備模擬器
-- [ ] 模擬 Equipment 端 HSMS passive 模式
-- [ ] 回應 S1F1, S1F13 等基本訊息
-- [ ] 定時產生 Collection Event
-- [ ] 可設定 EC/SV 值
+- [x] 模擬 Equipment 端 HSMS passive 模式
+- [x] 回應 S1F1, S1F13 等基本訊息
+- [x] 定時產生 Collection Event
+- [x] 可設定 EC/SV 值
 
 ### API + 整合
 - [ ] gRPC service 定義（.proto）
 - [ ] REST API fallback
 - [ ] smart-factory-demo 呼叫範例
-- [ ] Docker 多階段建構
-- [ ] Makefile（build / test / lint / cross-compile）
+- [x] Docker 多階段建構
+- [x] Makefile（build / test / lint / cross-compile）
+- [x] Cross-compile linux/arm64 + linux/amd64 (2.7MB static binary)
+
+### 自動重連
+- [x] ManagedSession with exponential backoff
+- [x] Max retries 限制
+- [x] Background start 模式
+- [x] OnConnect / OnDisconnect callback
+
+### E2E 整合測試
+- [x] 完整通訊流程 (S1F13 -> S1F1 -> S1F17 -> S1F3 -> S2F13 -> S2F15 -> S1F15)
+- [x] Report 定義 + Event 綁定 (S2F33 -> S2F35 -> S2F37)
+- [x] Linktest / Deselect 控制訊息
+- [x] Dynamic SV 讀取驗證
+- [x] Delete all reports
 
 ### 文件
 - [ ] README（安裝、使用、設定）

@@ -10,7 +10,8 @@ import (
 )
 
 // Handler processes incoming SECS-II messages and generates replies.
-// It ties together the state machine, variable store, and event manager.
+// It ties together the state machine, variable store, event manager,
+// alarm manager, and command manager.
 type Handler struct {
 	logger    *slog.Logger
 	session   *hsms.Session
@@ -18,6 +19,8 @@ type Handler struct {
 	state     *StateMachine
 	vars      *VariableStore
 	events    *EventManager
+	alarms    *AlarmManager
+	commands  *CommandManager
 	mdln      string // Model name
 	softrev   string // Software revision
 
@@ -44,6 +47,8 @@ func NewHandler(session *hsms.Session, sessionID uint16, mdln, softrev string, l
 		state:          NewStateMachine(),
 		vars:           NewVariableStore(),
 		events:         NewEventManager(),
+		alarms:         NewAlarmManager(),
+		commands:       NewCommandManager(),
 		mdln:           mdln,
 		softrev:        softrev,
 		customHandlers: make(map[sfKey]MessageHandlerFunc),
@@ -58,6 +63,12 @@ func (h *Handler) Variables() *VariableStore { return h.vars }
 
 // Events returns the event manager.
 func (h *Handler) Events() *EventManager { return h.events }
+
+// Alarms returns the alarm manager.
+func (h *Handler) Alarms() *AlarmManager { return h.alarms }
+
+// Commands returns the command manager.
+func (h *Handler) Commands() *CommandManager { return h.commands }
 
 // OnMessage registers a custom handler for a specific Stream/Function.
 func (h *Handler) OnMessage(stream, function byte, fn MessageHandlerFunc) {
@@ -116,6 +127,14 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *hsms.Message) error {
 		reply, err = h.handleS2F35(msg)
 	case s == 2 && f == 37: // S2F37: Enable/Disable Event Report
 		reply, err = h.handleS2F37(msg)
+	case s == 2 && f == 41: // S2F41: Host Command Send (RCMD)
+		reply, err = h.handleS2F41(msg)
+	case s == 5 && f == 3: // S5F3: Enable/Disable Alarm Send
+		reply, err = h.handleS5F3(msg)
+	case s == 5 && f == 5: // S5F5: List Alarms Request
+		reply = h.handleS5F5()
+	case s == 5 && f == 7: // S5F7: List Enabled Alarms Request
+		reply = h.handleS5F7()
 	default:
 		h.logger.Warn("GEM unhandled message", "stream", s, "function", f)
 		return nil
@@ -424,6 +443,164 @@ func (h *Handler) handleS2F37(msg *hsms.Message) (*secs2.Item, error) {
 	}
 
 	return secs2.NewBinary([]byte{0x00}), nil // ERACK: 0 = accepted
+}
+
+// --- S2F41: Remote Command ---
+
+// S2F41 -> S2F42: Host Command Send
+func (h *Handler) handleS2F41(msg *hsms.Message) (*secs2.Item, error) {
+	body, err := secs2.Decode(msg.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	if body.Len() < 2 {
+		return secs2.NewList(
+			secs2.NewBinary([]byte{byte(CommandParameterError)}),
+			secs2.NewList(),
+		), nil
+	}
+
+	cmdName, err := body.ItemAt(0).ToASCII()
+	if err != nil {
+		return secs2.NewList(
+			secs2.NewBinary([]byte{byte(CommandParameterError)}),
+			secs2.NewList(),
+		), nil
+	}
+
+	// Parse parameters: L,n { L,2 { A cpname, cpval } }
+	var params []CommandParam
+	paramList := body.ItemAt(1)
+	for _, p := range paramList.Items() {
+		if p.Len() < 2 {
+			continue
+		}
+		name, _ := p.ItemAt(0).ToASCII()
+		params = append(params, CommandParam{
+			Name:  name,
+			Value: p.ItemAt(1),
+		})
+	}
+
+	status := h.commands.Execute(context.Background(), cmdName, params)
+	h.logger.Info("RCMD executed", "command", cmdName, "status", status)
+
+	return secs2.NewList(
+		secs2.NewBinary([]byte{byte(status)}),
+		secs2.NewList(), // Empty CPACK for now
+	), nil
+}
+
+// --- S5: Alarm Handlers ---
+
+// S5F3 -> S5F4: Enable/Disable Alarm Send
+func (h *Handler) handleS5F3(msg *hsms.Message) (*secs2.Item, error) {
+	body, err := secs2.Decode(msg.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	if body.Len() < 2 {
+		return secs2.NewBinary([]byte{0x01}), nil // ACKC5: 1 = error
+	}
+
+	// body: L,2 { ALED (binary: 0=disable, 0x80=enable), ALID }
+	aledBytes, err := body.ItemAt(0).ToBinary()
+	if err != nil {
+		return secs2.NewBinary([]byte{0x01}), nil
+	}
+	enabled := len(aledBytes) > 0 && aledBytes[0]&0x80 != 0
+
+	alids, err := body.ItemAt(1).ToUint64s()
+	if err != nil {
+		return secs2.NewBinary([]byte{0x01}), nil
+	}
+
+	if err := h.alarms.EnableAlarm(uint32(alids[0]), enabled); err != nil {
+		return secs2.NewBinary([]byte{0x01}), nil
+	}
+
+	return secs2.NewBinary([]byte{0x00}), nil // ACKC5: 0 = accepted
+}
+
+// S5F5 -> S5F6: List Alarms Request
+func (h *Handler) handleS5F5() *secs2.Item {
+	alarms := h.alarms.ListAlarms()
+	items := make([]*secs2.Item, len(alarms))
+	for i, a := range alarms {
+		alcd := byte(a.Severity)
+		if a.State == AlarmSet {
+			alcd |= 0x80 // Bit 7 = alarm set
+		}
+		items[i] = secs2.NewList(
+			secs2.NewBinary([]byte{alcd}), // ALCD
+			secs2.NewU4(a.ALID),
+			secs2.NewASCII(a.Text),
+		)
+	}
+	return secs2.NewList(items...)
+}
+
+// S5F7 -> S5F8: List Enabled Alarms Request
+func (h *Handler) handleS5F7() *secs2.Item {
+	alarms := h.alarms.ListAlarms()
+	var items []*secs2.Item
+	for _, a := range alarms {
+		if !a.Enabled {
+			continue
+		}
+		alcd := byte(a.Severity)
+		if a.State == AlarmSet {
+			alcd |= 0x80
+		}
+		items = append(items, secs2.NewList(
+			secs2.NewBinary([]byte{alcd}),
+			secs2.NewU4(a.ALID),
+			secs2.NewASCII(a.Text),
+		))
+	}
+	return secs2.NewList(items...)
+}
+
+// --- Alarm Sending ---
+
+// SendAlarm sends an S5F1 alarm report to the host.
+func (h *Handler) SendAlarm(ctx context.Context, alid uint32, set bool) error {
+	var alarm *Alarm
+	var err error
+	if set {
+		alarm, err = h.alarms.SetAlarm(alid)
+	} else {
+		alarm, err = h.alarms.ClearAlarm(alid)
+	}
+	if err != nil {
+		return err
+	}
+
+	if !alarm.Enabled {
+		return nil // Silently skip disabled alarms
+	}
+
+	alcd := byte(alarm.Severity)
+	if set {
+		alcd |= 0x80
+	}
+
+	body := secs2.NewList(
+		secs2.NewBinary([]byte{alcd}), // ALCD
+		secs2.NewU4(alarm.ALID),
+		secs2.NewASCII(alarm.Text),
+	)
+
+	data, err := secs2.Encode(body)
+	if err != nil {
+		return err
+	}
+
+	msg := hsms.NewDataMessage(h.sessionID, 5, 1, true, 0, data)
+	_, err = h.session.SendMessage(ctx, msg)
+	return err
 }
 
 // --- Event Sending ---
