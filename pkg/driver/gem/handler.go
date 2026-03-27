@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/dashfactory/go-factory-io/pkg/message/secs2"
+	"github.com/dashfactory/go-factory-io/pkg/security"
 	"github.com/dashfactory/go-factory-io/pkg/transport/hsms"
 )
 
@@ -23,6 +24,11 @@ type Handler struct {
 	commands  *CommandManager
 	mdln      string // Model name
 	softrev   string // Software revision
+
+	// Security (IEC 62443 FR2)
+	policy    *security.SessionPolicy
+	auditor   *security.Auditor
+	interlock *SafetyInterlock
 
 	// Custom message handlers (for application-specific messages)
 	customHandlers map[sfKey]MessageHandlerFunc
@@ -70,6 +76,21 @@ func (h *Handler) Alarms() *AlarmManager { return h.alarms }
 // Commands returns the command manager.
 func (h *Handler) Commands() *CommandManager { return h.commands }
 
+// SetPolicy sets the session access control policy (IEC 62443 FR2).
+func (h *Handler) SetPolicy(policy *security.SessionPolicy) { h.policy = policy }
+
+// Policy returns the current session policy.
+func (h *Handler) Policy() *security.SessionPolicy { return h.policy }
+
+// SetAuditor sets the security event auditor.
+func (h *Handler) SetAuditor(auditor *security.Auditor) { h.auditor = auditor }
+
+// SetSafetyInterlock configures the SEMI S2 safety interlock.
+func (h *Handler) SetSafetyInterlock(interlock *SafetyInterlock) { h.interlock = interlock }
+
+// SafetyInterlock returns the current safety interlock (may be nil).
+func (h *Handler) SafetyInterlock() *SafetyInterlock { return h.interlock }
+
 // OnMessage registers a custom handler for a specific Stream/Function.
 func (h *Handler) OnMessage(stream, function byte, fn MessageHandlerFunc) {
 	h.customHandlers[sfKey{stream, function}] = fn
@@ -85,6 +106,20 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *hsms.Message) error {
 	f := msg.Header.Function
 
 	h.logger.Debug("GEM received", "stream", s, "function", f, "systemID", msg.Header.SystemID)
+
+	// RBAC check (IEC 62443 FR2)
+	if h.policy != nil && !h.policy.IsAllowed(s, f) {
+		source := fmt.Sprintf("session:%d", msg.Header.SessionID)
+		h.logger.Warn("GEM message denied by policy", "stream", s, "function", f)
+		if h.auditor != nil {
+			h.auditor.UnauthorizedMessage(source, s, f)
+		}
+		// Send S{s}F0 (abort) if WBit is set
+		if msg.Header.WBit {
+			return h.sendReply(msg, s, 0, nil)
+		}
+		return nil
+	}
 
 	// Check for custom handler first
 	if fn, ok := h.customHandlers[sfKey{s, f}]; ok {
@@ -151,12 +186,16 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *hsms.Message) error {
 }
 
 func (h *Handler) sendReply(req *hsms.Message, stream, function byte, body *secs2.Item) error {
-	data, err := secs2.Encode(body)
-	if err != nil {
-		return fmt.Errorf("gem: encode reply: %w", err)
+	var data []byte
+	if body != nil {
+		var err error
+		data, err = secs2.Encode(body)
+		if err != nil {
+			return fmt.Errorf("gem: encode reply: %w", err)
+		}
 	}
 	reply := hsms.NewDataMessage(req.Header.SessionID, stream, function, false, req.Header.SystemID, data)
-	_, err = h.session.SendMessage(context.Background(), reply)
+	_, err := h.session.SendMessage(context.Background(), reply)
 	return err
 }
 
@@ -576,6 +615,11 @@ func (h *Handler) SendAlarm(ctx context.Context, alid uint32, set bool) error {
 	}
 	if err != nil {
 		return err
+	}
+
+	// Safety interlock check (SEMI S2)
+	if set && h.interlock != nil {
+		h.interlock.Evaluate(alarm)
 	}
 
 	if !alarm.Enabled {

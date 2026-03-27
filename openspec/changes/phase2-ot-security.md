@@ -1,7 +1,7 @@
 ---
 title: Phase 2 - OT Security (IEC 62443 / SEMI E187)
 type: feature
-status: in-progress
+status: completed
 created: 2026-03-27
 ---
 
@@ -241,23 +241,25 @@ type SafetyConfig struct {
 ## Checklist
 
 ### P0 - TLS + 基礎安全
-- [ ] TLS wrapper for HSMS (Active + Passive)
-- [ ] mTLS (mutual TLS) 雙向驗證
-- [ ] TLS helper: cert/key 載入, 預設安全 cipher suite
-- [ ] IP 白名單 (connection accept 階段)
-- [ ] Max connections 限制
-- [ ] SecurityEvent 結構 + handler
-- [ ] 安全事件 logging (auth fail, rejected, malformed)
-- [ ] Rate limiter (token bucket, per-connection)
-- [ ] Max message size 限制
-- [ ] Session TTL (auto-disconnect)
-- [ ] REST API bearer token auth
-- [ ] Secure defaults helper
-- [ ] 向下相容測試 (plaintext mode)
+- [x] TLS wrapper for HSMS (Active + Passive)
+- [x] mTLS (mutual TLS) 雙向驗證
+- [x] TLS helper: cert/key 載入, 預設安全 cipher suite, 動態測試 CA
+- [x] IP 白名單 (connection accept 階段)
+- [x] Max connections 限制 (config field)
+- [x] SecurityEvent 結構 + Auditor (IEC 62443 FR1-FR7 categories)
+- [x] 安全事件 logging (auth fail, rejected, malformed, rate limited, unauthorized)
+- [x] Rate limiter (token bucket, per-connection)
+- [x] Max message size 限制
+- [x] Session TTL (auto-disconnect)
+- [x] REST API bearer token auth (/health 公開)
+- [x] SecureConfig() helper 一鍵 SL2 預設
+- [x] 向下相容測試 (plaintext mode 仍正常)
 
 ### P1 - RBAC + Safety
-- [ ] SECS S/F RBAC (per-session policy)
-- [ ] ReadOnly mode
-- [ ] Safety interlock (alarm severity -> action)
-- [ ] Message recording middleware
-- [ ] Security event webhook
+- [x] SECS S/F RBAC (per-session policy, allowlist + denylist)
+- [x] ReadOnly mode (封鎖所有寫入/控制 S/F)
+- [x] MonitorPolicy (僅允許讀取操作)
+- [x] Safety interlock (alarm severity -> ForceOffline/ForceIdle/LogOnly)
+- [x] OnSafetyAlarm callback
+- [x] Message recording middleware (forensic, hex dump, file writer)
+- [ ] Security event webhook (留 Phase 3)

@@ -301,6 +301,101 @@ func TestEventManagerDeleteAllReports(t *testing.T) {
 	}
 }
 
+// --- Safety Interlock Tests ---
+
+func TestSafetyInterlockForceOffline(t *testing.T) {
+	sm := NewStateMachine()
+	sm.EnableComm()
+	sm.CommEstablished()
+	sm.GoOnlineRemote()
+
+	si := NewSafetyInterlock(sm, nil)
+	si.SetAction(AlarmActionForceOffline)
+	si.SetThreshold(AlarmEquipSafety) // Bit 6
+
+	// Trigger with equipment safety alarm
+	alarm := &Alarm{
+		ALID:     1,
+		Name:     "OverTemp",
+		Severity: AlarmEquipSafety,
+		State:    AlarmSet,
+	}
+
+	triggered := si.Evaluate(alarm)
+	if !triggered {
+		t.Fatal("expected interlock to trigger")
+	}
+	if sm.IsOnline() {
+		t.Error("equipment should be OFFLINE after safety interlock")
+	}
+}
+
+func TestSafetyInterlockBelowThreshold(t *testing.T) {
+	sm := NewStateMachine()
+	sm.EnableComm()
+	sm.CommEstablished()
+	sm.GoOnlineRemote()
+
+	si := NewSafetyInterlock(sm, nil)
+	si.SetThreshold(AlarmEquipSafety)
+
+	// Low severity alarm should not trigger
+	alarm := &Alarm{
+		ALID:     2,
+		Name:     "MinorWarn",
+		Severity: AlarmAttention, // Bit 2, below threshold
+		State:    AlarmSet,
+	}
+
+	triggered := si.Evaluate(alarm)
+	if triggered {
+		t.Error("low severity should not trigger interlock")
+	}
+	if !sm.IsOnline() {
+		t.Error("equipment should still be ONLINE")
+	}
+}
+
+func TestSafetyInterlockCallback(t *testing.T) {
+	sm := NewStateMachine()
+	sm.EnableComm()
+	sm.CommEstablished()
+	sm.GoOnlineRemote()
+
+	si := NewSafetyInterlock(sm, nil)
+	var callbackAlarm *Alarm
+	var callbackAction AlarmAction
+	si.OnSafetyAlarm = func(a *Alarm, action AlarmAction) {
+		callbackAlarm = a
+		callbackAction = action
+	}
+
+	alarm := &Alarm{ALID: 1, Severity: AlarmPersonalSafety, State: AlarmSet}
+	si.Evaluate(alarm)
+
+	if callbackAlarm == nil {
+		t.Fatal("callback not called")
+	}
+	if callbackAlarm.ALID != 1 {
+		t.Errorf("callback ALID: %d", callbackAlarm.ALID)
+	}
+	if callbackAction != AlarmActionForceOffline {
+		t.Errorf("callback action: %s", callbackAction)
+	}
+}
+
+func TestSafetyInterlockClearedAlarm(t *testing.T) {
+	sm := NewStateMachine()
+	si := NewSafetyInterlock(sm, nil)
+
+	// Cleared alarm should not trigger
+	alarm := &Alarm{ALID: 1, Severity: AlarmPersonalSafety, State: AlarmCleared}
+	triggered := si.Evaluate(alarm)
+	if triggered {
+		t.Error("cleared alarm should not trigger")
+	}
+}
+
 func TestEventManagerLinkUnknownCEID(t *testing.T) {
 	em := NewEventManager()
 	em.DefineReport(1, []uint32{1001})
