@@ -9,11 +9,18 @@ Implements SEMI E5 (SECS-II), E30 (GEM), and E37 (HSMS) standards. Designed for 
 - **SECS-II (E5)**: Full 14-type encode/decode, nested list support, 7M+ ops/sec
 - **HSMS (E37)**: Active/Passive TCP, Select/Deselect/Linktest, T3-T8 timeouts
 - **GEM (E30)**: Communication + Control state machines, EC/SV, Collection Events, Reports, Alarms, Remote Commands
+- **OT Security**: TLS/mTLS, IP allowlist, RBAC, rate limiting, safety interlock (IEC 62443 SL3)
+- **Prometheus Metrics**: `/metrics` endpoint with connection, message, alarm counters
+- **OPC-UA**: gopcua wrapper with Read/Write/Browse/Subscribe
+- **MQTT Bridge**: Publish GEM events to MQTT broker for MES/SCADA integration
+- **gRPC API**: High-frequency M2M communication (mirrors REST API)
+- **Modbus TCP**: PLC/sensor communication with all 8 standard function codes
+- **Security Webhook**: Forward security events to HTTP endpoints or Syslog
+- **REST API + SSE**: HTTP endpoints and real-time event streaming
 - **Auto-reconnect**: Exponential backoff with configurable max retries
-- **REST API**: HTTP endpoints for integration with external services (FastAPI, etc.)
-- **SSE**: Real-time event streaming via Server-Sent Events
 - **Equipment simulator**: Built-in simulator for development and testing
-- **Cross-platform**: Single static binary, cross-compiles to Linux ARM64/AMD64
+- **Python Client**: Async/sync client library for FastAPI integration
+- **Cross-platform**: Single static binary (~2.7MB), cross-compiles to Linux ARM64/AMD64
 
 ## Quick Start
 
@@ -23,6 +30,15 @@ go build -o bin/secsgem ./cmd/secsgem/
 
 # Run simulator (HSMS on :5000, REST API on :8080)
 ./bin/secsgem simulate
+
+# With MQTT bridge
+./bin/secsgem simulate --mqtt-broker tcp://localhost:1883 --mqtt-prefix factory/eq01
+
+# With gRPC API
+./bin/secsgem simulate --grpc-addr :50051
+
+# With security event webhook
+./bin/secsgem simulate --webhook-url http://siem.local:9200/events
 
 # Connect as host from another terminal
 ./bin/secsgem connect localhost:5000
@@ -212,19 +228,92 @@ eq.Handler().Commands().Register("PP_SELECT", func(ctx context.Context, params [
 | S5F7/F8 | List Enabled Alarms | H→E / E→H |
 | S6F11/F12 | Event Report Send | E→H / H→E |
 
+## MQTT Bridge
+
+The MQTT bridge publishes GEM events to an MQTT broker, enabling integration with factory MES/SCADA systems.
+
+**Topics:**
+
+| Topic | Content |
+|-------|---------|
+| `{prefix}/status` | Equipment state changes |
+| `{prefix}/event/{ceid}` | Collection Events |
+| `{prefix}/alarm/{alid}` | Alarm set/clear |
+| `{prefix}/sv/{svid}` | Status Variable updates |
+
+Payloads use the same JSON format as the REST API.
+
+```bash
+# Subscribe to all equipment events
+mosquitto_sub -t "factory/eq01/#"
+
+# Output:
+# factory/eq01/event/100 {"type":"collection_event","timestamp":"...","data":{"dataID":1,"ceid":100}}
+# factory/eq01/alarm/1   {"type":"alarm","timestamp":"...","data":{"alid":1,"state":"set","text":"..."}}
+```
+
+## gRPC API
+
+High-frequency M2M alternative to the REST API. Proto definition at `api/grpc/proto/secsgem.proto`.
+
+| RPC | Description |
+|-----|-------------|
+| GetStatus | Equipment state |
+| ListStatusVariables | All SVs |
+| GetStatusVariable | Single SV by ID |
+| ListEquipmentConstants | All ECs |
+| SetEquipmentConstant | Update EC value |
+| ExecuteCommand | Remote command (RCMD) |
+| ListAlarms | All/active alarms |
+| StreamEvents | Server-streaming real-time events |
+
+## Modbus TCP
+
+Read/write PLC registers and coils via Modbus TCP protocol.
+
+```go
+import "github.com/dashfactory/go-factory-io/pkg/transport/modbus"
+
+client := modbus.NewClient(modbus.Config{
+    Address: "192.168.1.100:502",
+    UnitID:  1,
+}, logger)
+client.Connect(ctx)
+
+// Read 10 holding registers starting at address 0
+regs, _ := client.ReadHoldingRegisters(ctx, 0, 10)
+
+// Write a single register
+client.WriteSingleRegister(ctx, 100, 42)
+
+// Read coils
+coils, _ := client.ReadCoils(ctx, 0, 8)
+```
+
+Supported function codes: FC01-FC06, FC15, FC16.
+
 ## Project Structure
 
 ```
 go-factory-io/
-├── api/rest/          REST API handlers + tests
-├── cmd/secsgem/       CLI daemon entry point
-├── examples/simulator Equipment simulator
+├── api/
+│   ├── rest/              REST API handlers + tests
+│   └── grpc/              gRPC server + proto definitions
+├── cmd/secsgem/           CLI daemon entry point
+├── clients/python/        Python async/sync client
+├── examples/simulator     Equipment simulator
 ├── pkg/
-│   ├── driver/gem/    GEM state machine, variables, events, alarms, commands
-│   ├── message/secs2/ SECS-II encode/decode
-│   ├── session/       Auto-reconnect managed session
-│   └── transport/hsms HSMS TCP transport
-└── test/integration/  End-to-end tests
+│   ├── bridge/mqtt/       MQTT event bridge
+│   ├── driver/gem/        GEM state machine, variables, events, alarms, commands
+│   ├── message/secs2/     SECS-II encode/decode
+│   ├── metrics/           Prometheus metrics collector
+│   ├── security/          TLS, RBAC, audit, rate limit, webhook, syslog
+│   ├── session/           Auto-reconnect managed session
+│   └── transport/
+│       ├── hsms/          HSMS TCP transport
+│       ├── modbus/        Modbus TCP client
+│       └── opcua/         OPC-UA client
+└── test/integration/      End-to-end tests
 ```
 
 ## Testing

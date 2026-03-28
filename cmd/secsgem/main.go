@@ -17,11 +17,14 @@ import (
 	"syscall"
 	"time"
 
+	grpcapi "github.com/dashfactory/go-factory-io/api/grpc"
 	"github.com/dashfactory/go-factory-io/api/rest"
 	"github.com/dashfactory/go-factory-io/examples/simulator"
+	mqttbridge "github.com/dashfactory/go-factory-io/pkg/bridge/mqtt"
 	"github.com/dashfactory/go-factory-io/pkg/driver/gem"
 	"github.com/dashfactory/go-factory-io/pkg/message/secs2"
 	"github.com/dashfactory/go-factory-io/pkg/metrics"
+	"github.com/dashfactory/go-factory-io/pkg/security"
 	"github.com/dashfactory/go-factory-io/pkg/transport/hsms"
 )
 
@@ -65,6 +68,15 @@ func runSimulator(logger *slog.Logger) {
 	model := fs.String("model", "SIM-EQUIP-01", "Equipment model name")
 	version := fs.String("version", "1.0.0", "Software revision")
 	eventInterval := fs.Duration("event-interval", 5*time.Second, "Event generation interval (0 to disable)")
+
+	// Phase 4: Edge integration flags
+	mqttBroker := fs.String("mqtt-broker", "", "MQTT broker URL (e.g., tcp://localhost:1883)")
+	mqttPrefix := fs.String("mqtt-prefix", "", "MQTT topic prefix (default: factory/{model})")
+	mqttQoS := fs.Int("mqtt-qos", 1, "MQTT QoS level (0, 1, or 2)")
+	grpcAddr := fs.String("grpc-addr", "", "gRPC listen address (e.g., :50051)")
+	webhookURL := fs.String("webhook-url", "", "Security event webhook URL")
+	syslogAddr := fs.String("syslog-addr", "", "Syslog server address (e.g., syslog.local:514)")
+
 	fs.Parse(os.Args[2:])
 
 	cfg := simulator.EquipmentConfig{
@@ -82,6 +94,62 @@ func runSimulator(logger *slog.Logger) {
 	if err := eq.Start(ctx); err != nil {
 		logger.Error("Failed to start simulator", "error", err)
 		os.Exit(1)
+	}
+
+	// Security auditor for webhook/syslog
+	auditor := security.NewAuditor(logger)
+
+	// Phase 4: MQTT bridge
+	if *mqttBroker != "" {
+		prefix := *mqttPrefix
+		if prefix == "" {
+			prefix = "factory/" + *model
+		}
+		mqttCfg := mqttbridge.DefaultConfig(*mqttBroker, prefix)
+		mqttCfg.QoS = byte(*mqttQoS)
+		bridge := mqttbridge.NewBridge(mqttCfg, logger)
+		if err := bridge.Connect(); err != nil {
+			logger.Error("MQTT connect failed", "error", err)
+		} else {
+			bridge.AttachToHandler(eq.Handler())
+			defer bridge.Close()
+			logger.Info("MQTT bridge active", "broker", *mqttBroker, "prefix", prefix)
+		}
+	}
+
+	// Phase 4: Security event webhook
+	if *webhookURL != "" {
+		handler := security.NewWebhookHandler(security.WebhookConfig{URL: *webhookURL}, logger)
+		auditor.OnEvent(handler)
+		logger.Info("Security webhook active", "url", *webhookURL)
+	}
+
+	// Phase 4: Syslog sink
+	if *syslogAddr != "" {
+		handler, err := security.NewSyslogHandler(security.SyslogConfig{
+			Network: "udp",
+			Address: *syslogAddr,
+		}, logger)
+		if err != nil {
+			logger.Error("Syslog handler failed", "error", err)
+		} else {
+			auditor.OnEvent(handler)
+			logger.Info("Syslog sink active", "address", *syslogAddr)
+		}
+	}
+
+	eq.Handler().SetAuditor(auditor)
+
+	// Phase 4: gRPC server
+	var grpcServer *grpcapi.Server
+	if *grpcAddr != "" {
+		grpcServer = grpcapi.NewServer(eq.Session(), eq.Handler(), logger, "")
+		go func() {
+			if err := grpcServer.Serve(*grpcAddr); err != nil {
+				logger.Error("gRPC server error", "error", err)
+			}
+		}()
+		logger.Info("gRPC server listening", "address", *grpcAddr)
 	}
 
 	// Start REST API + Prometheus metrics
@@ -108,6 +176,9 @@ func runSimulator(logger *slog.Logger) {
 	logger.Info("Press Ctrl+C to stop")
 
 	waitForSignal(cancel)
+	if grpcServer != nil {
+		grpcServer.Stop()
+	}
 	httpSrv.Shutdown(context.Background())
 	eq.Stop()
 }
@@ -237,5 +308,5 @@ func waitForSignal(cancel context.CancelFunc) {
 	cancel()
 }
 
-// Ensure gem package is used (will be used in future host-side handler)
+// Ensure packages are used
 var _ = gem.NewStateMachine

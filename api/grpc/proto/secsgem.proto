@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package secsgem.v1;
+
+option go_package = "github.com/dashfactory/go-factory-io/api/grpc/secsgemv1";
+
+// SECSGEMService provides gRPC access to SECS/GEM equipment communication.
+// Mirrors the REST API endpoints for high-frequency M2M integration.
+service SECSGEMService {
+  // GetStatus returns the current equipment state.
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // ListStatusVariables returns all defined status variables.
+  rpc ListStatusVariables(ListSVRequest) returns (ListSVResponse);
+
+  // GetStatusVariable returns a specific status variable by SVID.
+  rpc GetStatusVariable(GetSVRequest) returns (GetSVResponse);
+
+  // ListEquipmentConstants returns all defined equipment constants.
+  rpc ListEquipmentConstants(ListECRequest) returns (ListECResponse);
+
+  // SetEquipmentConstant updates an equipment constant value.
+  rpc SetEquipmentConstant(SetECRequest) returns (SetECResponse);
+
+  // ExecuteCommand sends a remote command (RCMD) to the equipment.
+  rpc ExecuteCommand(ExecuteCommandRequest) returns (ExecuteCommandResponse);
+
+  // ListAlarms returns all defined alarms.
+  rpc ListAlarms(ListAlarmsRequest) returns (ListAlarmsResponse);
+
+  // StreamEvents provides a server-streaming RPC for real-time equipment events.
+  rpc StreamEvents(StreamEventsRequest) returns (stream EventNotification);
+}
+
+// --- Status ---
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  string comm_state = 1;
+  string control_state = 2;
+  bool communicating = 3;
+  bool online = 4;
+  string transport_state = 5;
+}
+
+// --- Status Variables ---
+
+message ListSVRequest {}
+
+message StatusVariable {
+  uint32 svid = 1;
+  string name = 2;
+  string units = 3;
+  string value = 4; // JSON-encoded value
+}
+
+message ListSVResponse {
+  repeated StatusVariable variables = 1;
+}
+
+message GetSVRequest {
+  uint32 svid = 1;
+}
+
+message GetSVResponse {
+  StatusVariable variable = 1;
+}
+
+// --- Equipment Constants ---
+
+message ListECRequest {}
+
+message EquipmentConstant {
+  uint32 ecid = 1;
+  string name = 2;
+  string units = 3;
+  string value = 4; // JSON-encoded value
+}
+
+message ListECResponse {
+  repeated EquipmentConstant constants = 1;
+}
+
+message SetECRequest {
+  uint32 ecid = 1;
+  string value = 2; // JSON-encoded value
+}
+
+message SetECResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// --- Commands ---
+
+message ExecuteCommandRequest {
+  string command = 1;
+  map<string, string> params = 2;
+}
+
+message ExecuteCommandResponse {
+  string command = 1;
+  string status = 2;
+  int32 code = 3;
+}
+
+// --- Alarms ---
+
+message ListAlarmsRequest {
+  bool active_only = 1; // If true, return only active alarms
+}
+
+message AlarmInfo {
+  uint32 alid = 1;
+  string name = 2;
+  string text = 3;
+  string state = 4;
+  bool enabled = 5;
+  uint32 severity = 6;
+}
+
+message ListAlarmsResponse {
+  repeated AlarmInfo alarms = 1;
+}
+
+// --- Event Streaming ---
+
+message StreamEventsRequest {}
+
+message EventNotification {
+  string type = 1;
+  string timestamp = 2;
+  string data = 3; // JSON-encoded event data
+}

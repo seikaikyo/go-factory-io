@@ -262,4 +262,4 @@ type SafetyConfig struct {
 - [x] Safety interlock (alarm severity -> ForceOffline/ForceIdle/LogOnly)
 - [x] OnSafetyAlarm callback
 - [x] Message recording middleware (forensic, hex dump, file writer)
-- [ ] Security event webhook (留 Phase 3)
+- [x] Security event webhook (Phase 4 完成: HTTP POST + Syslog)

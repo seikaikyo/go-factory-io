@@ -32,7 +32,18 @@ type Handler struct {
 
 	// Custom message handlers (for application-specific messages)
 	customHandlers map[sfKey]MessageHandlerFunc
+
+	// Event hooks for external integrations (MQTT bridge, gRPC streaming, etc.)
+	// Callbacks must be non-blocking; use a buffered channel internally if processing is slow.
+	eventCallbacks []EventCallback
+	alarmCallbacks []AlarmCallback
 }
+
+// EventCallback is invoked after an S6F11 event report is sent to the host.
+type EventCallback func(dataID, ceid uint32)
+
+// AlarmCallback is invoked after an S5F1 alarm report is sent to the host.
+type AlarmCallback func(alid uint32, set bool, alarm *Alarm)
 
 type sfKey struct {
 	stream, function byte
@@ -90,6 +101,16 @@ func (h *Handler) SetSafetyInterlock(interlock *SafetyInterlock) { h.interlock =
 
 // SafetyInterlock returns the current safety interlock (may be nil).
 func (h *Handler) SafetyInterlock() *SafetyInterlock { return h.interlock }
+
+// OnEventSent registers a callback invoked after each S6F11 event report is sent.
+func (h *Handler) OnEventSent(fn EventCallback) {
+	h.eventCallbacks = append(h.eventCallbacks, fn)
+}
+
+// OnAlarmSent registers a callback invoked after each S5F1 alarm report is sent.
+func (h *Handler) OnAlarmSent(fn AlarmCallback) {
+	h.alarmCallbacks = append(h.alarmCallbacks, fn)
+}
 
 // OnMessage registers a custom handler for a specific Stream/Function.
 func (h *Handler) OnMessage(stream, function byte, fn MessageHandlerFunc) {
@@ -644,6 +665,11 @@ func (h *Handler) SendAlarm(ctx context.Context, alid uint32, set bool) error {
 
 	msg := hsms.NewDataMessage(h.sessionID, 5, 1, true, 0, data)
 	_, err = h.session.SendMessage(ctx, msg)
+	if err == nil {
+		for _, cb := range h.alarmCallbacks {
+			cb(alid, set, alarm)
+		}
+	}
 	return err
 }
 
@@ -687,6 +713,11 @@ func (h *Handler) SendEvent(ctx context.Context, dataID, ceid uint32) error {
 
 	msg := hsms.NewDataMessage(h.sessionID, 6, 11, true, 0, data)
 	_, err = h.session.SendMessage(ctx, msg)
+	if err == nil {
+		for _, cb := range h.eventCallbacks {
+			cb(dataID, ceid)
+		}
+	}
 	return err
 }
 
