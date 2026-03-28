@@ -30,6 +30,13 @@ type Handler struct {
 	auditor   *security.Auditor
 	interlock *SafetyInterlock
 
+	// 300mm extensions (SEMI E87/E40/E90/E94/E116)
+	carriers    *CarrierManager
+	processJobs *ProcessJobManager
+	substrates  *SubstrateTracker
+	controlJobs *ControlJobManager
+	ept         *EPTTracker
+
 	// Custom message handlers (for application-specific messages)
 	customHandlers map[sfKey]MessageHandlerFunc
 
@@ -66,6 +73,11 @@ func NewHandler(session *hsms.Session, sessionID uint16, mdln, softrev string, l
 		events:         NewEventManager(),
 		alarms:         NewAlarmManager(),
 		commands:       NewCommandManager(),
+		carriers:       NewCarrierManager(),
+		processJobs:    NewProcessJobManager(),
+		substrates:     NewSubstrateTracker(),
+		controlJobs:    NewControlJobManager(),
+		ept:            NewEPTTracker(),
 		mdln:           mdln,
 		softrev:        softrev,
 		customHandlers: make(map[sfKey]MessageHandlerFunc),
@@ -86,6 +98,21 @@ func (h *Handler) Alarms() *AlarmManager { return h.alarms }
 
 // Commands returns the command manager.
 func (h *Handler) Commands() *CommandManager { return h.commands }
+
+// Carriers returns the E87 carrier manager.
+func (h *Handler) Carriers() *CarrierManager { return h.carriers }
+
+// ProcessJobs returns the E40 process job manager.
+func (h *Handler) ProcessJobs() *ProcessJobManager { return h.processJobs }
+
+// Substrates returns the E90 substrate tracker.
+func (h *Handler) Substrates() *SubstrateTracker { return h.substrates }
+
+// ControlJobs returns the E94 control job manager.
+func (h *Handler) ControlJobs() *ControlJobManager { return h.controlJobs }
+
+// EPT returns the E116 equipment performance tracker.
+func (h *Handler) EPT() *EPTTracker { return h.ept }
 
 // SetPolicy sets the session access control policy (IEC 62443 FR2).
 func (h *Handler) SetPolicy(policy *security.SessionPolicy) { h.policy = policy }

@@ -267,6 +267,62 @@ High-frequency M2M alternative to the REST API. Proto definition at `api/grpc/pr
 | ListAlarms | All/active alarms |
 | StreamEvents | Server-streaming real-time events |
 
+## 300mm GEM Extensions
+
+Implements SEMI 300mm wafer fab standards for carrier management, job control, and performance tracking.
+
+### E87 - Carrier Management
+
+```go
+cm := handler.Carriers()
+cm.DefinePort(1)
+cm.SetPortInService(1)
+
+// Bind FOUP to port
+cm.BindCarrier("FOUP-001", 1, "LOT-A", "PRODUCT")
+
+// Lifecycle: NotAccessed -> WaitingForHost -> InAccess -> CarrierComplete -> ReadyToUnload
+cm.ProceedWithCarrier("FOUP-001")
+cm.StartAccess("FOUP-001")
+cm.CompleteAccess("FOUP-001")
+cm.ReadyToUnload("FOUP-001")
+cm.UnbindCarrier("FOUP-001")
+```
+
+### E40 - Process Job Management
+
+```go
+pm := handler.ProcessJobs()
+pm.Create("PJ-001", "RECIPE-A", "FOUP-001", []int{1,2,3}, nil)
+
+// Lifecycle: Queued -> SettingUp -> WaitingForStart -> Processing -> ProcessComplete
+pm.Setup("PJ-001")
+pm.SetupComplete("PJ-001")
+pm.Start("PJ-001")
+pm.Complete("PJ-001")
+```
+
+### E90 - Substrate Tracking
+
+```go
+st := handler.Substrates()
+st.RegisterSubstrate("W001", "LOT-A", "FOUP-001", 1, "PORT1")
+st.MoveSubstrate("W001", gem.SubstrateLocation{Type: gem.LocationChamber, ID: "CH1", Slot: 1})
+st.MarkProcessed("W001")
+```
+
+### E116 - Equipment Performance Tracking
+
+```go
+ept := handler.EPT()
+ept.SetState(gem.EPTBusy)
+ept.RecordUnit(false) // good unit
+ept.SetState(gem.EPTIdle)
+
+a, p, q, oee := ept.OEE()
+fmt.Printf("OEE: %.1f%% (A=%.1f%% P=%.1f%% Q=%.1f%%)\n", oee*100, a*100, p*100, q*100)
+```
+
 ## Modbus TCP
 
 Read/write PLC registers and coils via Modbus TCP protocol.
