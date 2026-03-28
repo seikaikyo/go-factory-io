@@ -6,50 +6,50 @@ Open-source SECS/GEM equipment driver in Go. Covers 12 SEMI standards, 5 communi
 
 ## Why this project exists
 
-二十幾年前我從自由軟體社群開始寫程式，經營 [phpBB 繁體中文](https://phpbb-tw.net/phpbb/) 論壇，翻譯文件、改程式碼、幫人解問題。那時候覺得「把東西做出來放到網路上讓大家用」是一件很自然的事，到現在還是這樣。
+I started programming through the open-source community over twenty years ago, running a [phpBB forum](https://phpbb-tw.net/phpbb/), translating docs, fixing code, helping people. Building things and putting them on the internet for others to use felt natural then. It still does.
 
-SEMI SECS/GEM 的規格書攤開來超過兩千頁。讀這些文件本身就是一件有趣的事 -- 狀態機怎麼轉、訊息怎麼編、設備跟 host 之間那套嚴格的握手流程，每一層都有設計的道理在。我喜歡研究這些東西，也擅長把不同層的東西整合在一起，就想說來寫一個盡量完整的 Go 實作，看能不能對社群有點貢獻。
+The SEMI SECS/GEM specs run over two thousand pages. Reading them is genuinely interesting -- how the state machines transition, how messages encode, the strict handshake protocol between equipment and host. Every layer has a reason behind its design. I enjoy digging into these systems and integrating across layers, so I decided to write a comprehensive Go implementation and see if it could be useful to the community.
 
-開源社群已經有很好的基礎。[secs4net](https://github.com/mkjeff/secs4net)（C#, 590+ stars）在 .NET 生態經過大量生產驗證，[secsgem](https://github.com/bparzella/secsgem)（Python）把 GEM 狀態機做得很完整，[secs4java8](https://github.com/kenta-shimizu/secs4java8) 和 [secs4go](https://github.com/younglifestyle/secs4go) 分別在 Java 和 Go 提供了穩定的通訊層。這些專案讓開發者能跟設備講上話，打下了整個生態的地基。
+The open-source ecosystem already has solid foundations. [secs4net](https://github.com/mkjeff/secs4net) (C#, 590+ stars) is battle-tested in .NET production environments. [secsgem](https://github.com/bparzella/secsgem) (Python) has a thorough GEM state machine. [secs4java8](https://github.com/kenta-shimizu/secs4java8) and [secs4go](https://github.com/younglifestyle/secs4go) provide stable transport layers in Java and Go respectively. These projects laid the groundwork for the entire ecosystem.
 
-go-factory-io 想做的，是在這個地基上往上蓋。把 300mm 晶圓廠會用到的標準（E87 Carrier、E40 Process Job、E90 Substrate Tracking、E94 Control Job、E116 OEE）、工廠裡常見的其他協定（OPC-UA、MQTT、Modbus TCP）、還有近年越來越被重視的資安要求（IEC 62443），整合進同一個 binary。讀 secs4net 和 secsgem 的原始碼學到很多，HSMS 連線管理的設計模式有不少是從那邊吸收來的。
+go-factory-io builds on top of that groundwork. It integrates the 300mm fab standards (E87 Carrier, E40 Process Job, E90 Substrate Tracking, E94 Control Job, E116 OEE), common factory protocols (OPC-UA, MQTT, Modbus TCP), and the increasingly important cybersecurity requirements (IEC 62443) into a single binary. I learned a lot reading secs4net and secsgem source code -- quite a few HSMS connection management patterns were absorbed from there.
 
-### 涵蓋範圍
+### Coverage
 
 ```
-  go-factory-io 整合的 SEMI 標準與協定
+  SEMI Standards & Protocols
   ────────────────────────────────────────
-  通訊層          E5 SECS-II 編解碼
-                  E30 GEM 狀態機
-                  E37 HSMS 傳輸 (TLS/mTLS)
+  Transport       E5 SECS-II Codec
+                  E30 GEM State Machine
+                  E37 HSMS (TLS/mTLS)
 
-  300mm 擴充      E87  Carrier Management
+  300mm           E87  Carrier Management
                   E40  Process Jobs
                   E90  Substrate Tracking
                   E94  Control Jobs
                   E116 EPT / OEE
 
-  安全與合規      E187/E191 Cybersecurity
+  Security        E187/E191 Cybersecurity
                   IEC 62443 SL4
 
-  多協定橋接      OPC-UA, MQTT, Modbus TCP
+  Multi-Protocol  OPC-UA, MQTT, Modbus TCP
                   REST, gRPC, SSE
 
-  可觀測性        Prometheus metrics
+  Observability   Prometheus metrics
 ```
 
-### 致謝與相關資源
+### Acknowledgments
 
-這個專案受益於開源社群的長期積累。以下專案在 SECS/GEM 領域各有深耕，閱讀它們的原始碼讓我學到很多：
+This project stands on the shoulders of the SECS/GEM open-source community. Reading their source code shaped many design decisions:
 
-| 專案 | 語言 | 學到什麼 |
-|------|------|---------|
-| [secs4net](https://github.com/mkjeff/secs4net) | C# | HSMS 連線管理的設計模式、生產環境的邊界處理 |
-| [secsgem](https://github.com/bparzella/secsgem) | Python | GEM 狀態機的完整實作結構 |
-| [secs4java8](https://github.com/kenta-shimizu/secs4java8) | Java | SECS-I + HSMS-GS 雙模支援的架構思路 |
-| [secs4go](https://github.com/younglifestyle/secs4go) | Go | Go 語言處理 SECS-II binary 編碼的慣用寫法 |
+| Project | Language | What I learned |
+|---------|----------|---------------|
+| [secs4net](https://github.com/mkjeff/secs4net) | C# | HSMS connection management patterns, production edge-case handling |
+| [secsgem](https://github.com/bparzella/secsgem) | Python | Thorough GEM state machine implementation structure |
+| [secs4java8](https://github.com/kenta-shimizu/secs4java8) | Java | Dual-mode SECS-I + HSMS-GS architecture |
+| [secs4go](https://github.com/younglifestyle/secs4go) | Go | Idiomatic Go patterns for SECS-II binary encoding |
 
-go-factory-io 的方向是把通訊層往上延伸 -- 整合 300mm 晶圓廠需要的載體管理、製程追蹤、設備效率分析，再加上工業資安的需求。算是在不同的層次做嘗試。
+go-factory-io extends the transport layer upward -- integrating carrier management, process tracking, equipment performance analytics, and industrial cybersecurity that 300mm fabs need. A different layer of the same problem space.
 
 ## SEMI Standards Coverage
 
@@ -341,8 +341,8 @@ go test -v ./test/integration/         # E2E with simulator
 
 ## Live Demo
 
-- **[Showcase](https://factory.dashai.dev/showcase)** -- 互動式展示頁，7 個區塊呈現架構、即時數據、安全層
-- **[Equipment Monitor](https://factory.dashai.dev/tv/equipment)** -- 即時設備監控儀表板，OEE gauge、FOUP 載體、Process Job 追蹤
+- **[Showcase](https://factory.dashai.dev/showcase)** -- Interactive exhibit: architecture, live data, security layers
+- **[Equipment Monitor](https://factory.dashai.dev/tv/equipment)** -- Real-time dashboard: OEE gauges, FOUP carriers, process job tracking
 
 ## License
 
