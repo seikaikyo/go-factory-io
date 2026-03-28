@@ -4,46 +4,52 @@ Open-source SECS/GEM equipment driver in Go. Covers 12 SEMI standards, 5 communi
 
 **[Live Demo](https://factory.dashai.dev/tv/equipment)** | [API Docs](#rest-api) | [Go Library](#go-library-usage)
 
-## Why go-factory-io?
+## Why this project exists
 
-Every open-source SECS/GEM library stops at the communication layer (E5 + E37). The 300mm standards, security, and multi-protocol integration that real fabs need only exist in commercial SDKs costing $50K-$200K per seat. go-factory-io fills that gap.
+二十幾年前我從自由軟體社群開始寫程式，經營 [phpBB 繁體中文](https://phpbb-tw.net/phpbb/) 論壇，翻譯文件、改程式碼、幫人解問題。那時候覺得「把東西做出來放到網路上讓大家用」是一件很自然的事，到現在還是這樣。
 
-### vs. Open-Source
+SEMI SECS/GEM 的規格書攤開來超過兩千頁。讀這些文件本身就是一件有趣的事 -- 狀態機怎麼轉、訊息怎麼編、設備跟 host 之間那套嚴格的握手流程，每一層都有設計的道理在。我喜歡研究這些東西，也擅長把不同層的東西整合在一起，就想說來寫一個盡量完整的 Go 實作，看能不能對社群有點貢獻。
 
-| | go-factory-io | secs4net (C#) | secsgem (Py) | secs4go (Go) | hsms-driver (JS) |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **SEMI Standards** | **12** | 2 | 3 | 2-3 | 1 |
-| E5 SECS-II | Yes | Yes | Yes | Yes | -- |
-| E30 GEM | Full | -- | Yes | Partial | -- |
-| E37 HSMS | Yes | Yes | Yes | Yes | Yes |
-| E87 Carrier Mgmt | **Yes** | -- | -- | -- | -- |
-| E40 Process Jobs | **Yes** | -- | -- | -- | -- |
-| E90 Substrate Track | **Yes** | -- | -- | -- | -- |
-| E94 Control Jobs | **Yes** | -- | -- | -- | -- |
-| E116 EPT/OEE | **Yes** | -- | -- | -- | -- |
-| E187/E191 Security | **Yes** | -- | -- | -- | -- |
-| TLS / mTLS | **Yes** | -- | -- | -- | -- |
-| RBAC | **Yes** | -- | -- | -- | -- |
-| AES-GCM Encryption | **Yes** | -- | -- | -- | -- |
-| OPC-UA | **Yes** | -- | -- | -- | -- |
-| MQTT Bridge | **Yes** | -- | -- | -- | -- |
-| Modbus TCP | **Yes** | -- | -- | -- | -- |
-| gRPC API | **Yes** | -- | -- | -- | -- |
-| Prometheus Metrics | **Yes** | -- | -- | -- | -- |
-| Linux ARM64 | **Yes** | -- | Yes | Yes | Yes |
+開源社群已經有很好的基礎。[secs4net](https://github.com/mkjeff/secs4net)（C#, 590+ stars）在 .NET 生態經過大量生產驗證，[secsgem](https://github.com/bparzella/secsgem)（Python）把 GEM 狀態機做得很完整，[secs4java8](https://github.com/kenta-shimizu/secs4java8) 和 [secs4go](https://github.com/younglifestyle/secs4go) 分別在 Java 和 Go 提供了穩定的通訊層。這些專案讓開發者能跟設備講上話，打下了整個生態的地基。
 
-No open-source project implements E87, E40, E90, E94, E116, or any security standard. These are exclusive to commercial SDKs -- until now.
+go-factory-io 想做的，是在這個地基上往上蓋。把 300mm 晶圓廠會用到的標準（E87 Carrier、E40 Process Job、E90 Substrate Tracking、E94 Control Job、E116 OEE）、工廠裡常見的其他協定（OPC-UA、MQTT、Modbus TCP）、還有近年越來越被重視的資安要求（IEC 62443），整合進同一個 binary。讀 secs4net 和 secsgem 的原始碼學到很多，HSMS 連線管理的設計模式有不少是從那邊吸收來的。
 
-### vs. Commercial SDKs
+### 涵蓋範圍
 
-| Capability | go-factory-io | Cimetrix / PEER Group |
-|-----------|:---:|:---:|
-| 300mm Standards | Yes | Yes |
-| IEC 62443 Security | **SL4** | SL2 typical |
-| Multi-protocol (MQTT/OPC-UA/Modbus) | **Integrated** | Separate products |
-| Edge deployment (RPi/ARM64) | **Yes** | Windows x86 only |
-| API (REST/gRPC/SSE) | **Built-in** | Proprietary SDK |
-| License | **MIT (free)** | $50K-$200K/seat |
+```
+  go-factory-io 整合的 SEMI 標準與協定
+  ────────────────────────────────────────
+  通訊層          E5 SECS-II 編解碼
+                  E30 GEM 狀態機
+                  E37 HSMS 傳輸 (TLS/mTLS)
+
+  300mm 擴充      E87  Carrier Management
+                  E40  Process Jobs
+                  E90  Substrate Tracking
+                  E94  Control Jobs
+                  E116 EPT / OEE
+
+  安全與合規      E187/E191 Cybersecurity
+                  IEC 62443 SL4
+
+  多協定橋接      OPC-UA, MQTT, Modbus TCP
+                  REST, gRPC, SSE
+
+  可觀測性        Prometheus metrics
+```
+
+### 致謝與相關資源
+
+這個專案受益於開源社群的長期積累。以下專案在 SECS/GEM 領域各有深耕，閱讀它們的原始碼讓我學到很多：
+
+| 專案 | 語言 | 學到什麼 |
+|------|------|---------|
+| [secs4net](https://github.com/mkjeff/secs4net) | C# | HSMS 連線管理的設計模式、生產環境的邊界處理 |
+| [secsgem](https://github.com/bparzella/secsgem) | Python | GEM 狀態機的完整實作結構 |
+| [secs4java8](https://github.com/kenta-shimizu/secs4java8) | Java | SECS-I + HSMS-GS 雙模支援的架構思路 |
+| [secs4go](https://github.com/younglifestyle/secs4go) | Go | Go 語言處理 SECS-II binary 編碼的慣用寫法 |
+
+go-factory-io 的方向是把通訊層往上延伸 -- 整合 300mm 晶圓廠需要的載體管理、製程追蹤、設備效率分析，再加上工業資安的需求。算是在不同的層次做嘗試。
 
 ## SEMI Standards Coverage
 
@@ -335,7 +341,8 @@ go test -v ./test/integration/         # E2E with simulator
 
 ## Live Demo
 
-The [Smart Factory Demo](https://factory.dashai.dev/tv/equipment) showcases go-factory-io's REST API powering a real-time equipment monitoring dashboard with live sensor data, GEM state machine visualization, and alarm tracking.
+- **[Showcase](https://factory.dashai.dev/showcase)** -- 互動式展示頁，7 個區塊呈現架構、即時數據、安全層
+- **[Equipment Monitor](https://factory.dashai.dev/tv/equipment)** -- 即時設備監控儀表板，OEE gauge、FOUP 載體、Process Job 追蹤
 
 ## License
 
