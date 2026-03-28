@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dashfactory/go-factory-io/pkg/driver/gem"
+	"github.com/dashfactory/go-factory-io/pkg/security"
 	"github.com/dashfactory/go-factory-io/pkg/transport/hsms"
 )
 
@@ -24,6 +25,9 @@ type Server struct {
 	session     *hsms.Session
 	mux         *http.ServeMux
 	bearerToken string // Empty = no auth required
+
+	// Security status (SEMI E191)
+	securityStatus *security.SecurityStatus
 
 	// SSE event subscribers
 	sseClients   map[chan EventPayload]struct{}
@@ -71,6 +75,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/alarms/active", s.handleActiveAlarms)
 	s.mux.HandleFunc("POST /api/command", s.handleCommand)
 	s.mux.HandleFunc("GET /api/events", s.handleSSE)
+	s.mux.HandleFunc("GET /api/security/status", s.handleSecurityStatus)
 }
 
 // Handler returns the http.Handler for this server.
@@ -367,6 +372,25 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// SetSecurityStatus sets the E191 security status tracker for the /api/security/status endpoint.
+func (s *Server) SetSecurityStatus(ss *security.SecurityStatus) {
+	s.securityStatus = ss
+}
+
+func (s *Server) handleSecurityStatus(w http.ResponseWriter, r *http.Request) {
+	if s.securityStatus == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"data":    map[string]interface{}{"message": "security status not configured"},
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data":    s.securityStatus.Report(),
+	})
 }
 
 // --- Helpers ---

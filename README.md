@@ -9,7 +9,11 @@ Implements SEMI E5 (SECS-II), E30 (GEM), and E37 (HSMS) standards. Designed for 
 - **SECS-II (E5)**: Full 14-type encode/decode, nested list support, 7M+ ops/sec
 - **HSMS (E37)**: Active/Passive TCP, Select/Deselect/Linktest, T3-T8 timeouts
 - **GEM (E30)**: Communication + Control state machines, EC/SV, Collection Events, Reports, Alarms, Remote Commands
-- **OT Security**: TLS/mTLS, IP allowlist, RBAC, rate limiting, safety interlock (IEC 62443 SL3)
+- **OT Security**: TLS/mTLS, RBAC, rate limiting, safety interlock, AES-GCM encryption (IEC 62443 SL4)
+- **Certificate Revocation**: CRL cache + OCSP checking
+- **Anomaly Detection**: Pluggable interface for external ML systems
+- **HSM Support**: PKCS#11 key storage interface
+- **SEMI E191**: Cybersecurity status reporting endpoint
 - **Prometheus Metrics**: `/metrics` endpoint with connection, message, alarm counters
 - **OPC-UA**: gopcua wrapper with Read/Write/Browse/Subscribe
 - **MQTT Bridge**: Publish GEM events to MQTT broker for MES/SCADA integration
@@ -75,6 +79,7 @@ The simulator exposes an HTTP API for integration with other services.
 | GET | `/api/alarms/active` | List active alarms |
 | POST | `/api/command` | Execute a remote command (RCMD) |
 | GET | `/api/events` | SSE stream for real-time events |
+| GET | `/api/security/status` | SEMI E191 cybersecurity status |
 
 Response format follows `{ success: boolean, data?: T, error?: { code, message } }`.
 
