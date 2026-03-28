@@ -344,6 +344,12 @@ go test -v ./test/integration/         # E2E with simulator
 - **[Showcase](https://factory.dashai.dev/showcase)** -- Interactive exhibit: architecture, live data, security layers
 - **[Equipment Monitor](https://factory.dashai.dev/tv/equipment)** -- Real-time dashboard: OEE gauges, FOUP carriers, process job tracking
 
+## Status
+
+This is an educational and research project. The implementation follows published SEMI standard specifications and has been validated against a software simulator, not production semiconductor equipment. SEMI standard numbers (E5, E30, E37, etc.) are referenced for interoperability description purposes. The SEMI standards themselves are proprietary documents available from [SEMI.org](https://www.semi.org/).
+
+If you plan to use this in a production environment, thorough validation against your specific equipment is required.
+
 ## License
 
-MIT
+MIT -- see [LICENSE](LICENSE)
