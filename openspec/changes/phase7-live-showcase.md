@@ -1,7 +1,7 @@
 ---
 title: Phase 7 - go-factory-io Live Showcase (smart-factory-demo integration)
 type: feature
-status: planned
+status: completed
 created: 2026-03-28
 ---
 
@@ -307,22 +307,22 @@ Step 4: 路由 + 導航 + SEO (0.5 天)
 ## Checklist
 
 ### B - TV Equipment 擴充
-- [ ] FOUP 載體狀態面板（2 ports + slot map）
-- [ ] OEE 圓形 gauge（A/P/Q/OEE）
-- [ ] Process Job 時間軸
-- [ ] dashai-api: /equipment/carriers API
-- [ ] dashai-api: /equipment/oee API
-- [ ] dashai-api: /equipment/jobs API
+- [x] FOUP 載體狀態面板（2 ports + slot map）
+- [x] OEE 圓形 gauge（A/P/Q/OEE）
+- [x] Process Job 時間軸
+- [x] dashai-api: /equipment/carriers API
+- [x] dashai-api: /equipment/oee API
+- [x] dashai-api: /equipment/jobs API
 
 ### C - Showcase 頁面
-- [ ] Section 1: Hero + 設備剖面動畫
-- [ ] Section 2: GEM State Machine (live)
-- [ ] Section 3: FOUP Carrier Animation
-- [ ] Section 4: OEE Dashboard
-- [ ] Section 5: Multi-Protocol Data Flow
-- [ ] Section 6: Security Layers
-- [ ] Section 7: Comparison + CTA
-- [ ] dashai-api: /equipment/substrates API
-- [ ] dashai-api: /equipment/protocols API
-- [ ] Router + SEO meta
-- [ ] 三語言 i18n (zh-TW / en / ja)
+- [x] Section 1: Hero + 設備剖面動畫
+- [x] Section 2: GEM State Machine (live)
+- [x] Section 3: FOUP Carrier Animation
+- [x] Section 4: OEE Dashboard
+- [x] Section 5: Multi-Protocol Data Flow
+- [x] Section 6: Security Layers
+- [x] Section 7: Comparison + CTA
+- [x] dashai-api: /equipment/substrates API
+- [x] dashai-api: /equipment/protocols API
+- [x] Router + SEO meta
+- [x] 三語言 i18n (zh-TW / en / ja)
