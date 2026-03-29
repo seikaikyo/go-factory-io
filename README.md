@@ -2,7 +2,7 @@
 
 Open-source SECS/GEM equipment driver in Go. Covers 12 SEMI standards, 5 communication protocols, and IEC 62443 SL4 security -- in a single static binary that runs on a Raspberry Pi.
 
-**[Live Demo](https://factory.dashai.dev/tv/equipment)** | [API Docs](#rest-api) | [Go Library](#go-library-usage)
+**[SECSGEM Studio](https://studio.dashai.dev)** | **[Live Demo](https://factory.dashai.dev/tv/equipment)** | [API Docs](#rest-api) | [Go Library](#go-library-usage)
 
 ## Why this project exists
 
@@ -66,6 +66,33 @@ go-factory-io extends the transport layer upward -- integrating carrier manageme
 | E187 | Fab Equipment Cybersecurity | Implemented (TLS, RBAC, audit) |
 | E191 | Cybersecurity Status Reporting | Implemented (/api/security/status) |
 
+## SECSGEM Studio
+
+Integrated simulator, validator, and protocol tracer with a built-in web UI.
+
+**[Try it live](https://studio.dashai.dev)**
+
+```bash
+# Run locally with embedded web UI
+./secsgem studio --port 8080
+# Open http://localhost:8080
+```
+
+Four tabs in one interface:
+
+- **Dashboard** -- Real-time message feed with per-message validation badges
+- **Simulator** -- Send standard GEM messages (S1F13, S1F1, S2F41...) or compose custom SML
+- **Validator** -- Schema validation against E30/E87/E40, state transition compliance checking
+- **Report** -- Implementation coverage across 3 standards and 42 S/F message types
+
+![Dashboard - Live message trace with validation](docs/images/studio-dashboard.png)
+
+![Simulator - Quick messages and SML editor](docs/images/studio-simulator.png)
+
+![Report - Implementation coverage by standard](docs/images/studio-report.png)
+
+The validator engine (`pkg/validator/`) and host simulator (`pkg/simulator/`) are also usable as Go libraries for CI integration and automated testing.
+
 ## Quick Start
 
 ```bash
@@ -88,6 +115,12 @@ The simulator starts an HSMS equipment on `:5000` and a REST API on `:8080`. Con
 
 ```bash
 ./secsgem connect localhost:5000
+```
+
+Or launch SECSGEM Studio for a visual interface:
+
+```bash
+./secsgem studio --port 8080
 ```
 
 ## Architecture
@@ -315,7 +348,7 @@ go-factory-io/
 │   ├── rest/              REST API + SSE + E191 endpoint
 │   └── grpc/              gRPC server + proto
 ├── clients/python/        Async/sync Python client
-├── cmd/secsgem/           CLI daemon
+├── cmd/secsgem/           CLI (simulate, connect, studio)
 ├── examples/simulator/    Equipment simulator
 ├── pkg/
 │   ├── bridge/mqtt/       MQTT event bridge
@@ -324,10 +357,14 @@ go-factory-io/
 │   ├── metrics/           Prometheus collector
 │   ├── security/          TLS, RBAC, AES-GCM, audit, HSM, anomaly
 │   ├── session/           Auto-reconnect
+│   ├── simulator/         Host simulator, fault injection, script runner
+│   ├── studio/            Web UI server (go:embed)
+│   ├── validator/         Schema, state, timing validation + coverage report
 │   └── transport/
 │       ├── hsms/          HSMS (E37)
 │       ├── modbus/        Modbus TCP
 │       └── opcua/         OPC-UA
+├── studio-site/           Static site for studio.dashai.dev
 └── test/integration/      E2E tests
 ```
 
@@ -341,6 +378,7 @@ go test -v ./test/integration/         # E2E with simulator
 
 ## Live Demo
 
+- **[SECSGEM Studio](https://studio.dashai.dev)** -- Simulator, validator, and message tracer in the browser
 - **[Showcase](https://factory.dashai.dev/showcase)** -- Interactive exhibit: architecture, live data, security layers
 - **[Equipment Monitor](https://factory.dashai.dev/tv/equipment)** -- Real-time dashboard: OEE gauges, FOUP carriers, process job tracking
 
