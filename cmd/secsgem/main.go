@@ -25,6 +25,7 @@ import (
 	"github.com/dashfactory/go-factory-io/pkg/message/secs2"
 	"github.com/dashfactory/go-factory-io/pkg/metrics"
 	"github.com/dashfactory/go-factory-io/pkg/security"
+	"github.com/dashfactory/go-factory-io/pkg/studio"
 	"github.com/dashfactory/go-factory-io/pkg/transport/hsms"
 )
 
@@ -41,6 +42,8 @@ func main() {
 		runSimulator(logger)
 	case "connect":
 		runConnect(logger)
+	case "studio":
+		runStudio(logger)
 	case "version":
 		fmt.Println("go-factory-io v0.1.0")
 	default:
@@ -55,6 +58,7 @@ func printUsage() {
 Commands:
   simulate    Run an equipment simulator (passive mode)
   connect     Connect to equipment as host (active mode)
+  studio      Launch SECSGEM Studio (integrated simulator + validator web UI)
   version     Print version information
 
 `)
@@ -306,6 +310,59 @@ func waitForSignal(cancel context.CancelFunc) {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 	cancel()
+}
+
+func runStudio(logger *slog.Logger) {
+	fs := flag.NewFlagSet("studio", flag.ExitOnError)
+	port := fs.Int("port", 8080, "Web UI listen port")
+	equipAddr := fs.String("equipment-addr", "", "External equipment address (default: embedded simulator)")
+	sessionID := fs.Int("session", 1, "Session ID")
+	fs.Parse(os.Args[2:])
+
+	cfg := studio.Config{
+		EquipmentAddr: *equipAddr,
+		SessionID:     uint16(*sessionID),
+	}
+
+	srv := studio.NewServer(cfg, logger)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start embedded equipment if no external address
+	addr := *equipAddr
+	if addr == "" {
+		var err error
+		addr, err = srv.StartEquipment(ctx)
+		if err != nil {
+			logger.Error("Failed to start embedded equipment", "error", err)
+			os.Exit(1)
+		}
+		// Wait for equipment to be ready
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Connect host to equipment
+	if err := srv.ConnectHost(ctx, addr); err != nil {
+		logger.Error("Failed to connect host", "error", err)
+		os.Exit(1)
+	}
+
+	listenAddr := fmt.Sprintf(":%d", *port)
+	httpSrv := &http.Server{Addr: listenAddr, Handler: srv.Handler()}
+	go func() {
+		logger.Info("SECSGEM Studio running",
+			"url", fmt.Sprintf("http://localhost:%d", *port),
+			"equipment", addr,
+		)
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("Studio HTTP error", "error", err)
+		}
+	}()
+
+	logger.Info("Press Ctrl+C to stop")
+	waitForSignal(cancel)
+	httpSrv.Shutdown(context.Background())
+	srv.StopAll()
 }
 
 // Ensure packages are used

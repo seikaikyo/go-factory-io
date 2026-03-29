@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SECSGEM Studio</title>
+<meta name="description" content="SECS/GEM message simulator, validator, and protocol tracer for semiconductor equipment integration. AI-assisted development.">
+<link rel="stylesheet" href="studio.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">SECSGEM <span>Studio</span></div>
+    <div id="conn-status" class="conn-status disconnected">
+      <div class="conn-dot"></div>
+      <span id="conn-text">CONNECTING</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="topbar-info">go-factory-io</div>
+    <div class="topbar-info">Simulator Mode</div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="dashboard">Dashboard</div>
+  <div class="tab" data-tab="simulator">Simulator</div>
+  <div class="tab" data-tab="validator">Validator</div>
+  <div class="tab" data-tab="report">Report</div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" class="page active">
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Messages Traced</div>
+      <div id="msg-count" class="stat-value blue">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Validation Checks</div>
+      <div id="val-count" class="stat-value green">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Polling Interval</div>
+      <div class="stat-value yellow">3s</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      Live Message Feed
+      <span style="font-size:11px;color:var(--text-dim)">auto-refresh every 3s</span>
+    </div>
+    <div class="card-body">
+      <div id="live-feed" class="feed">
+        <div class="empty-state">Connecting to simulator...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Simulator -->
+<div id="simulator" class="page">
+  <div class="sim-layout">
+    <div class="sim-sidebar">
+      <div class="card">
+        <div class="card-header">Quick Messages</div>
+        <div class="card-body quick-btns">
+          <button class="quick-btn" data-quick="establish_comm"><span class="sf">S1F13</span> Establish Comm</button>
+          <button class="quick-btn" data-quick="are_you_there"><span class="sf">S1F1</span> Are You There</button>
+          <button class="quick-btn" data-quick="request_online"><span class="sf">S1F17</span> Request Online</button>
+          <button class="quick-btn" data-quick="request_offline"><span class="sf">S1F15</span> Request Offline</button>
+          <button class="quick-btn" data-quick="rcmd_start"><span class="sf">S2F41</span> RCMD START</button>
+          <button class="quick-btn" data-quick="event_report"><span class="sf">S6F11</span> Event Report</button>
+          <button class="quick-btn" data-quick="alarm_report"><span class="sf">S5F1</span> Alarm Report</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-header">Send Raw Message</div>
+        <div class="card-body">
+          <div style="display:flex;gap:12px;margin-bottom:12px;align-items:center">
+            <label style="color:var(--text-dim);font-size:12px">Stream:</label>
+            <input id="send-stream" type="number" value="1" min="0" max="127" style="width:60px;background:var(--bg-dark);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-family:var(--font)">
+            <label style="color:var(--text-dim);font-size:12px">Function:</label>
+            <input id="send-function" type="number" value="13" min="0" max="255" style="width:60px;background:var(--bg-dark);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-family:var(--font)">
+          </div>
+          <textarea id="send-body" class="editor" placeholder='L:2 { A "HOST" A "1.0.0" }'>L:2 { A "HOST" A "1.0.0" }</textarea>
+          <div class="send-bar">
+            <button id="send-btn" class="btn btn-primary" style="flex:1">Send Message</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Validator -->
+<div id="validator" class="page">
+  <div class="card">
+    <div class="card-header">Validation Results
+      <span style="font-size:11px;color:var(--text-dim)">updated in real-time</span>
+    </div>
+    <div class="card-body">
+      <div id="validation-list">
+        <div class="empty-state">Send messages to see validation results</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Report -->
+<div id="report" class="page">
+  <div class="report-grid">
+    <div class="report-stat"><div id="rpt-standards" class="num" style="color:var(--accent)">-</div><div class="label">Standards</div></div>
+    <div class="report-stat"><div id="rpt-pct" class="num" style="color:var(--green)">-</div><div class="label">Coverage</div></div>
+    <div class="report-stat"><div id="rpt-handled" class="num" style="color:var(--green)">-</div><div class="label">Implemented</div></div>
+    <div class="report-stat"><div id="rpt-expected" class="num" style="color:var(--text-dim)">-</div><div class="label">Total S/F</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="card">
+      <div class="card-header">Standard Coverage</div>
+      <div class="card-body" id="coverage-bars"><div class="empty-state">Loading...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">Stream/Function Detail</div>
+      <div class="card-body" style="padding:0;max-height:500px;overflow-y:auto">
+        <table class="sf-table">
+          <thead><tr><th>S/F</th><th>Name</th><th>Dir</th><th>Std</th><th>Status</th></tr></thead>
+          <tbody id="sf-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="disclaimer">
+  SEMI, SECS, GEM, HSMS are trademarks of SEMI. This software implements the referenced standards but is not affiliated with, endorsed by, or certified by SEMI.
+  <br>Powered by <a href="https://github.com/seikaikyo/go-factory-io" style="color:var(--accent);text-decoration:none">go-factory-io</a>. AI-assisted development.
+</div>
+
+<script src="studio.js"></script>
+</body>
+</html>

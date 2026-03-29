@@ -6,6 +6,8 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/gopcua/opcua v0.8.0
 	google.golang.org/grpc v1.79.3
+	gopkg.in/yaml.v3 v3.0.1
+	nhooyr.io/websocket v1.8.17
 )
 
 require (
