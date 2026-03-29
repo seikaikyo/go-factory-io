@@ -16,7 +16,7 @@ FROM alpine:3.21
 RUN apk --no-cache add ca-certificates tzdata
 COPY --from=builder /secsgem /usr/local/bin/secsgem
 
-EXPOSE 8080
+EXPOSE 10000
 
 ENTRYPOINT ["secsgem"]
-CMD ["studio", "--port", "8080"]
+CMD ["studio", "--port", "10000"]

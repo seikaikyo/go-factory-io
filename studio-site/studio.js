@@ -1,7 +1,7 @@
 'use strict';
 
 // Go service on Render (WebSocket + REST)
-const GO_HOST = 'go-factory-io.onrender.com';
+const GO_HOST = 'dashai-go.onrender.com';
 const API_BASE = 'https://' + GO_HOST;
 
 let ws = null;
