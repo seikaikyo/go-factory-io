@@ -1,0 +1,10 @@
+services:
+  - type: web
+    runtime: docker
+    name: go-factory-io
+    region: singapore
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: TZ
+        value: Asia/Taipei
