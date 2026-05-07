@@ -87,6 +87,17 @@ function appendTrace(entry) {
   feed.appendChild(item);
   feed.scrollTop = feed.scrollHeight;
 
+  const sim = document.getElementById('sim-feed');
+  if (sim) {
+    if (sim.querySelector('.empty-state')) sim.innerHTML = '';
+    const bubble = document.createElement('div');
+    bubble.className = 'sim-msg ' + dirClass;
+    bubble.innerHTML = '<div class="sim-msg-meta"><span>' + entry.direction.toUpperCase() + ' ' + sf + '</span><span class="sim-msg-time">' + ts + '</span></div>'
+      + '<div class="sim-msg-body">' + (entry.bodySml || '(empty)') + '</div>';
+    sim.appendChild(bubble);
+    sim.scrollTop = sim.scrollHeight;
+  }
+
   const c = document.getElementById('msg-count');
   if (c) c.textContent = lastTraceId;
   const v = document.getElementById('val-count');
@@ -138,7 +149,8 @@ function renderReport(data) {
 
 // --- Send ---
 async function quickSend(name) {
-  await apiPost('/send', {name});
+  const r = await apiPost('/send', {name});
+  updateSendStatus(r, name);
   setTimeout(pollTrace, 500);
 }
 
@@ -146,8 +158,23 @@ async function rawSend() {
   const stream = parseInt(document.getElementById('send-stream').value);
   const fn = parseInt(document.getElementById('send-function').value);
   const body = document.getElementById('send-body').value;
-  await apiPost('/send', {stream, function: fn, body});
+  const r = await apiPost('/send', {stream, function: fn, body});
+  updateSendStatus(r, `S${stream}F${fn}`);
   setTimeout(pollTrace, 500);
+}
+
+function updateSendStatus(r, label) {
+  const el = document.getElementById('send-status');
+  if (!el) return;
+  const ts = new Date().toLocaleTimeString('en-US', {hour12: false});
+  if (r) {
+    const stream = (r.sent || label).match(/^S(\d+)F/)?.[1] || '?';
+    el.className = 'send-status success';
+    el.textContent = `${ts}  Sent ${r.sent || label} → Reply S${stream}F${r.replied}`;
+  } else {
+    el.className = 'send-status error';
+    el.textContent = `${ts}  Failed: ${label}`;
+  }
 }
 
 // --- Init ---

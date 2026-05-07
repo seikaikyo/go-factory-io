@@ -70,6 +70,21 @@ body { font-family: var(--font); background: var(--bg-dark); color: var(--text);
 .btn-ghost { background: var(--bg-card); color: var(--text-dim); border: 1px solid var(--border); }
 .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
 .btn-sm { padding: 6px 12px; font-size: 11px; }
+.send-status { margin-top: 12px; padding: 8px 12px; border-radius: var(--radius); font-size: 12px; min-height: 16px; font-family: var(--font); }
+.send-status.success { background: var(--green-dim); color: var(--green); }
+.send-status.error { background: var(--red-dim); color: var(--red); }
+.sim-send-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .sim-send-grid { grid-template-columns: 1fr; } }
+.sim-send-controls textarea.editor { min-height: 160px; }
+.sim-feed { padding: 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: var(--radius); max-height: 420px; min-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.sim-msg { padding: 8px 12px; border-radius: var(--radius); max-width: 85%; font-size: 11px; }
+.sim-msg.tx { align-self: flex-end; background: var(--accent-dim); border: 1px solid var(--accent); }
+.sim-msg.rx { align-self: flex-start; background: var(--green-dim); border: 1px solid var(--green); }
+.sim-msg-meta { display: flex; justify-content: space-between; gap: 12px; font-size: 10px; margin-bottom: 4px; font-weight: 700; }
+.sim-msg.tx .sim-msg-meta { color: var(--accent); }
+.sim-msg.rx .sim-msg-meta { color: var(--green); }
+.sim-msg-time { color: var(--text-dim); font-weight: 400; }
+.sim-msg-body { color: var(--text); white-space: pre-wrap; word-break: break-all; line-height: 1.4; }
 .quick-btns { display: flex; flex-direction: column; gap: 4px; }
 .quick-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 12px; background: none; border: none; color: var(--text); cursor: pointer; font-size: 12px; font-family: var(--font); border-radius: 4px; transition: background 0.1s; }
 .quick-btn:hover { background: var(--bg-hover); }
