@@ -202,6 +202,10 @@ textarea.editor:focus { border-color: var(--accent); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a3d47; }
 
+.run-demo-btn { margin-left: auto; background: linear-gradient(135deg, var(--accent), var(--cyan)); color: white; border: none; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font); transition: transform 0.1s, box-shadow 0.2s; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3); }
+.run-demo-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5); }
+.run-demo-btn:disabled { opacity: 0.7; cursor: progress; }
+
 /* Dashboard equipment-state visualization */
 .state-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
 .state-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 999px; font-size: 12px; }

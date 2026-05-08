@@ -37,6 +37,29 @@ function clearSimFeed() {
   updateSimCounts();
 }
 
+async function runDemoFlow() {
+  const btn = document.getElementById('run-demo-btn');
+  if (!btn || btn.disabled) return;
+  const tt = (typeof t === 'function') ? t : (k => k);
+  btn.disabled = true;
+  const steps = [
+    {chip: 'carrierBind'},
+    {chip: 'processJob'},
+    {chip: 'controlJob'},
+    {chip: 'start'},
+    {chip: 'stop'},
+    {chip: 'ackAlarm'},
+  ];
+  for (let i = 0; i < steps.length; i++) {
+    btn.textContent = tt('dash.runDemo.running', i + 1, steps.length);
+    const chipBtn = document.querySelector(`[data-i18n='chat.suggest.${steps[i].chip}']`);
+    if (chipBtn) chipBtn.click();
+    await new Promise(r => setTimeout(r, 4500));
+  }
+  btn.textContent = tt('dash.runDemo.idle');
+  btn.disabled = false;
+}
+
 function loadTemplate(btn) {
   document.getElementById('send-stream').value = btn.dataset.stream;
   document.getElementById('send-function').value = btn.dataset.function;
@@ -397,6 +420,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const clearBtn = document.getElementById('sim-feed-clear');
   if (clearBtn) clearBtn.addEventListener('click', clearSimFeed);
+  const runDemoBtn = document.getElementById('run-demo-btn');
+  if (runDemoBtn) runDemoBtn.addEventListener('click', runDemoFlow);
 
   startPolling();
 });
