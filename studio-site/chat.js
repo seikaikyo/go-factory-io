@@ -307,7 +307,7 @@ const CHAT_INTENTS = [
       const r = await call({stream, function: fn, body: ''});
       if (!r) return fail(`S${stream}F${fn} 送出失敗。`);
       const reply = r.replied != null ? r.replied : (fn + 1);
-      return ok(`S${stream}F${fn} 已送出 ✓\n\n  • Equipment 回 S${stream}F${reply}\n  • 原始 SECS 訊息直送，未經意圖層解析\n  • 完整 body 與 timing 在 SIMULATOR tab 的 trace 看`);
+      return ok(`S${stream}F${fn} 已送出 ✓\n\n  • Equipment 回 S${stream}F${reply}\n  • 原始 SECS 訊息直送，未經意圖層解析\n  • 適合除錯特定 stream/function 行為`);
     }
   }
 ];
@@ -343,7 +343,7 @@ function appendChatMsg(role, text) {
   wrap.appendChild(avatar);
   wrap.appendChild(bubble);
   feed.appendChild(wrap);
-  feed.scrollTop = feed.scrollHeight;
+  bubble.scrollIntoView({block: 'nearest'});
   return bubble;
 }
 
@@ -368,9 +368,9 @@ async function streamText(bubble, text, speed = 12) {
       const delay = ch === '。' ? speed * 4 : speed;
       await new Promise(r => setTimeout(r, delay));
     }
-    const feed = document.getElementById('chat-feed');
-    if (feed) feed.scrollTop = feed.scrollHeight;
+    if (i % 5 === 0) bubble.scrollIntoView({block: 'nearest'});
   }
+  bubble.scrollIntoView({block: 'nearest'});
   bubble.classList.remove('streaming');
 }
 
