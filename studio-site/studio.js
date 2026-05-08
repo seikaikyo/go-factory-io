@@ -92,11 +92,11 @@ async function runScenario(name) {
     if (status) status.textContent = tt('dash.runDemo.running', i + 1, steps.length, tt(steps[i].key));
     const chipBtn = document.querySelector(`[data-i18n='chat.suggest.${steps[i].chip}']`);
     if (chipBtn) chipBtn.click();
+    // call() inside chat.js syncs renderDashboardState + pollTrace
+    // from the response, so we just need to give the chat reply
+    // time to stream out before firing the next chip.
     await new Promise(r => setTimeout(r, 2800));
-    await pollState();
-    await new Promise(r => setTimeout(r, 400));
   }
-  await pollState();
   if (status) status.textContent = tt('dash.runDemo.done');
   setTimeout(() => {
     if (status) status.textContent = '';
@@ -165,10 +165,13 @@ async function pollState() {
 }
 
 function startPolling() {
+  // Single initial fetch only — no setInterval. State updates flow
+  // from chat / raw send response data via renderDashboardState(),
+  // and trace updates flow from explicit pollTrace() calls after
+  // each user action. Avoids constant polling that Vercel BotID
+  // flags as DDoS-style traffic.
   pollTrace();
   pollState();
-  setInterval(pollTrace, 3000);
-  setInterval(pollState, 3000);
 }
 
 function renderDashboardState(s) {

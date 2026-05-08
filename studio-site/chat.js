@@ -3,10 +3,15 @@
 async function call(spec) {
   const r = await apiPost('/send', spec);
   // Sync the Dashboard immediately so state pills / wafer journey /
-  // jobs tree reflect the same mutation the bot reply describes,
-  // instead of waiting up to 3s for the next /state poll.
+  // jobs tree reflect the same mutation the bot reply describes
+  // (no setInterval polling — see startPolling()).
   if (r && typeof renderDashboardState === 'function') {
     renderDashboardState(r);
+  }
+  // Pull the new trace entries so the live message feed shows the
+  // TX/RX bubbles for what the chat just sent.
+  if (typeof pollTrace === 'function') {
+    pollTrace();
   }
   return r;
 }
