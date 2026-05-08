@@ -26,6 +26,7 @@
 <div class="tabs">
   <div class="tab active" data-tab="dashboard">Dashboard</div>
   <div class="tab" data-tab="simulator">Simulator</div>
+  <div class="tab" data-tab="chat">Chat <span class="tab-badge">AI</span></div>
   <div class="tab" data-tab="validator">Validator</div>
   <div class="tab" data-tab="report">Report</div>
 </div>
@@ -100,6 +101,33 @@
   </div>
 </div>
 
+<!-- Chat (rule-based intent matcher styled as GenAI) -->
+<div id="chat" class="page">
+  <div class="card">
+    <div class="card-header">
+      SECSGEM Assistant
+      <span style="font-size:11px;color:var(--text-dim);font-weight:400">自然語言操作機台 — 規則式意圖匹配，零成本零延遲</span>
+    </div>
+    <div class="card-body chat-body">
+      <div class="chat-suggestions">
+        <button class="chat-chip" data-chat-suggest="幫助">幫助</button>
+        <button class="chat-chip" data-chat-suggest="機台狀況">機台狀況</button>
+        <button class="chat-chip" data-chat-suggest="建立連線">建立連線</button>
+        <button class="chat-chip" data-chat-suggest="上線">上線</button>
+        <button class="chat-chip" data-chat-suggest="檢查警報">檢查警報</button>
+        <button class="chat-chip" data-chat-suggest="啟動">啟動</button>
+      </div>
+      <div id="chat-feed" class="chat-feed">
+        <div class="empty-state" style="padding:40px;text-align:center;color:var(--text-dim);font-size:12px">輸入問題或點上方建議。試試「機台狀況」「有警報嗎」「啟動」「S1F1」</div>
+      </div>
+      <div class="chat-input-bar">
+        <input id="chat-input" type="text" placeholder="輸入想問的，例如「機台狀況」「啟動」「S1F1」..." autocomplete="off">
+        <button id="chat-send-btn" class="btn btn-primary">送出</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Validator -->
 <div id="validator" class="page">
   <div class="card">
@@ -145,5 +173,6 @@
 </div>
 
 <script src="studio.js"></script>
+<script src="chat.js"></script>
 </body>
 </html>
