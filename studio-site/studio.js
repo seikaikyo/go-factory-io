@@ -37,27 +37,71 @@ function clearSimFeed() {
   updateSimCounts();
 }
 
-async function runDemoFlow() {
-  const btn = document.getElementById('run-demo-btn');
-  if (!btn || btn.disabled) return;
+const SCENARIOS = {
+  happy: [
+    {chip: 'establish', key: 'dash.runDemo.step.handshake'},       // S1F13
+    {chip: 'online', key: 'dash.runDemo.step.online'},             // S1F17
+    {chip: 'clockSet', key: 'dash.runDemo.step.clock'},            // S2F31
+    {chip: 'recipeSelect', key: 'dash.runDemo.step.recipe'},       // S7F1
+    {chip: 'carrierBind', key: 'dash.runDemo.step.bind'},          // S3F1 → AtSource
+    {chip: 'materialHandoff', key: 'dash.runDemo.step.handoff'},   // S2F19 → Loading
+    {chip: 'processJob', key: 'dash.runDemo.step.pjob'},           // S16F11
+    {chip: 'controlJob', key: 'dash.runDemo.step.cjob'},           // S16F27 adopts PJ
+    {chip: 'start', key: 'dash.runDemo.step.start'},               // S2F41 START → InProcess
+    {chip: 'eptReport', key: 'dash.runDemo.step.ept'},             // S6F19 OEE
+    {chip: 'stop', key: 'dash.runDemo.step.stop'},                 // S2F41 STOP → Processed
+    {chip: 'substrateState', key: 'dash.runDemo.step.unload'},     // S3F31 → AtDestination
+    {chip: 'ackAlarm', key: 'dash.runDemo.step.ack'},              // S5F5
+    {chip: 'status', key: 'dash.runDemo.step.status'},             // S1F1
+  ],
+  pause: [
+    {chip: 'carrierBind', key: 'dash.runDemo.step.bind'},
+    {chip: 'materialHandoff', key: 'dash.runDemo.step.handoff'},
+    {chip: 'processJob', key: 'dash.runDemo.step.pjob'},
+    {chip: 'controlJob', key: 'dash.runDemo.step.cjob'},
+    {chip: 'start', key: 'dash.runDemo.step.start'},
+    {chip: 'pause', key: 'dash.runDemo.step.pause'},               // operator break
+    {chip: 'status', key: 'dash.runDemo.step.statusMid'},          // confirm paused
+    {chip: 'resume', key: 'dash.runDemo.step.resume'},             // back to running
+    {chip: 'stop', key: 'dash.runDemo.step.stop'},
+    {chip: 'substrateState', key: 'dash.runDemo.step.unload'},
+    {chip: 'status', key: 'dash.runDemo.step.status'},
+  ],
+  abort: [
+    {chip: 'carrierBind', key: 'dash.runDemo.step.bind'},
+    {chip: 'materialHandoff', key: 'dash.runDemo.step.handoff'},
+    {chip: 'processJob', key: 'dash.runDemo.step.pjob'},
+    {chip: 'controlJob', key: 'dash.runDemo.step.cjob'},
+    {chip: 'start', key: 'dash.runDemo.step.start'},
+    {chip: 'abort', key: 'dash.runDemo.step.abort'},               // emergency stop
+    {chip: 'alarms', key: 'dash.runDemo.step.alarmCheck'},         // query what fired
+    {chip: 'ackAlarm', key: 'dash.runDemo.step.ack'},
+    {chip: 'status', key: 'dash.runDemo.step.status'},
+  ],
+};
+
+async function runScenario(name) {
+  const buttons = document.querySelectorAll('.scenario-btn');
+  if ([...buttons].some(b => b.disabled)) return;
+  const steps = SCENARIOS[name];
+  if (!steps) return;
   const tt = (typeof t === 'function') ? t : (k => k);
-  btn.disabled = true;
-  const steps = [
-    {chip: 'carrierBind'},
-    {chip: 'processJob'},
-    {chip: 'controlJob'},
-    {chip: 'start'},
-    {chip: 'stop'},
-    {chip: 'ackAlarm'},
-  ];
+  const status = document.getElementById('scenario-status');
+  buttons.forEach(b => { b.disabled = true; b.classList.toggle('running', b.dataset.scenario === name); });
   for (let i = 0; i < steps.length; i++) {
-    btn.textContent = tt('dash.runDemo.running', i + 1, steps.length);
+    if (status) status.textContent = tt('dash.runDemo.running', i + 1, steps.length, tt(steps[i].key));
     const chipBtn = document.querySelector(`[data-i18n='chat.suggest.${steps[i].chip}']`);
     if (chipBtn) chipBtn.click();
-    await new Promise(r => setTimeout(r, 4500));
+    await new Promise(r => setTimeout(r, 2800));
+    await pollState();
+    await new Promise(r => setTimeout(r, 400));
   }
-  btn.textContent = tt('dash.runDemo.idle');
-  btn.disabled = false;
+  await pollState();
+  if (status) status.textContent = tt('dash.runDemo.done');
+  setTimeout(() => {
+    if (status) status.textContent = '';
+    buttons.forEach(b => { b.disabled = false; b.classList.remove('running'); });
+  }, 2500);
 }
 
 function loadTemplate(btn) {
@@ -168,7 +212,7 @@ function renderDashboardState(s) {
   document.querySelectorAll('.journey-stop').forEach(stop => {
     stop.classList.remove('active', 'reached');
   });
-  const order = ['AtSource', 'InProcess', 'AtDestination'];
+  const order = ['AtSource', 'Loading', 'InProcess', 'Processed', 'AtDestination'];
   const idx = order.indexOf(s.substrateState);
   if (idx >= 0) {
     document.querySelectorAll('.journey-stop').forEach((stop, i) => {
@@ -420,8 +464,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const clearBtn = document.getElementById('sim-feed-clear');
   if (clearBtn) clearBtn.addEventListener('click', clearSimFeed);
-  const runDemoBtn = document.getElementById('run-demo-btn');
-  if (runDemoBtn) runDemoBtn.addEventListener('click', runDemoFlow);
+  document.querySelectorAll('.scenario-btn').forEach(btn => {
+    btn.addEventListener('click', () => runScenario(btn.dataset.scenario));
+  });
 
   startPolling();
 });

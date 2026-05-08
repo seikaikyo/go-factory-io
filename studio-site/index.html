@@ -54,11 +54,17 @@
 
 <!-- Dashboard -->
 <div id="dashboard" class="page active">
+  <div class="dash-scenarios">
+    <span class="dash-scenarios-label" data-i18n="dash.scenarios.title">Run a scenario:</span>
+    <button class="scenario-btn happy" data-scenario="happy" data-i18n="dash.scenarios.happy">▶ Happy path</button>
+    <button class="scenario-btn pause" data-scenario="pause" data-i18n="dash.scenarios.pause">⏸ Pause &amp; resume</button>
+    <button class="scenario-btn abort" data-scenario="abort" data-i18n="dash.scenarios.abort">⚠ Abort &amp; recover</button>
+    <span id="scenario-status" class="scenario-status"></span>
+  </div>
   <div class="card">
     <div class="card-header">
       <span data-i18n="dash.equipmentState">Equipment State</span>
       <span style="font-size:11px;color:var(--text-dim);font-weight:400" data-i18n="dash.equipmentStateHint">live snapshot — what the floor is actually doing</span>
-      <button id="run-demo-btn" class="run-demo-btn" data-i18n="dash.runDemo.idle">▶ Run demo flow</button>
     </div>
     <div class="card-body">
       <div class="state-row">
@@ -90,9 +96,19 @@
             <div class="journey-label" data-i18n="dash.substrate.atSource">At source</div>
           </div>
           <div class="journey-line"></div>
+          <div class="journey-stop" data-stop="Loading">
+            <div class="journey-dot"></div>
+            <div class="journey-label" data-i18n="dash.substrate.loading">Loading</div>
+          </div>
+          <div class="journey-line"></div>
           <div class="journey-stop" data-stop="InProcess">
             <div class="journey-dot"></div>
             <div class="journey-label" data-i18n="dash.substrate.inProcess">In process</div>
+          </div>
+          <div class="journey-line"></div>
+          <div class="journey-stop" data-stop="Processed">
+            <div class="journey-dot"></div>
+            <div class="journey-label" data-i18n="dash.substrate.processed">Processed</div>
           </div>
           <div class="journey-line"></div>
           <div class="journey-stop" data-stop="AtDestination">
