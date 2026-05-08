@@ -35,7 +35,7 @@ const CHAT_RULES = [
   {name: 'terminal-msg', tk: 'terminal-msg', api: () => call({stream: 10, function: 3, body: ''}), ok: 'chat.terminal.ok', fail: 'chat.terminal.fail'},
   {name: 'spool-toggle', tk: 'spool-toggle', api: () => call({stream: 6, function: 23, body: ''}), ok: 'chat.spool.ok', fail: 'chat.spool.fail'},
   // Standard-specific intents (E5 / E37 / E40 / E84 / E87 / E90 / E94 / E116)
-  {name: 'linktest', tk: 'linktest', api: () => call({stream: 0, function: 1, body: ''}), ok: 'chat.linktest.ok', fail: 'chat.linktest.fail'},
+  {name: 'linktest', tk: 'linktest', api: () => call({name: 'linktest'}), ok: 'chat.linktest.ok', fail: 'chat.linktest.fail'},
   {name: 'format-verify', tk: 'format-verify', api: () => call({stream: 1, function: 65, body: ''}), ok: 'chat.formatVerify.ok', fail: 'chat.formatVerify.fail'},
   {name: 'material-handoff', tk: 'material-handoff', api: () => call({stream: 2, function: 19, body: ''}), ok: 'chat.materialHandoff.ok', fail: 'chat.materialHandoff.fail'},
   {name: 'carrier-bind', tk: 'carrier-bind', api: () => call({stream: 3, function: 1, body: ''}), ok: 'chat.carrierBind.ok', fail: 'chat.carrierBind.fail'},

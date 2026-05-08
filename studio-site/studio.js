@@ -93,10 +93,13 @@ function appendTrace(entry) {
     if (sim.querySelector('.empty-state')) sim.innerHTML = '';
     const bubble = document.createElement('div');
     bubble.className = 'sim-msg ' + dirClass;
-    bubble.innerHTML = '<div class="sim-msg-meta"><span>' + entry.direction.toUpperCase() + ' ' + sf + '</span><span class="sim-msg-time">' + ts + '</span></div>'
-      + '<div class="sim-msg-body">' + (entry.bodySml || '(empty)') + '</div>';
+    const rawBody = entry.bodySml || '';
+    const isEmpty = !rawBody || rawBody === '(empty)' || rawBody === '(no payload)';
+    const bodyHtml = isEmpty
+      ? '<div class="sim-msg-body sim-msg-body-empty">' + ((typeof t === 'function') ? t('sim.noPayload') : 'no payload') + '</div>'
+      : '<div class="sim-msg-body">' + rawBody + '</div>';
+    bubble.innerHTML = '<div class="sim-msg-meta"><span>' + entry.direction.toUpperCase() + ' ' + sf + '</span><span class="sim-msg-time">' + ts + '</span></div>' + bodyHtml;
     sim.prepend(bubble);
-    sim.scrollTop = 0;
   }
 
   const c = document.getElementById('msg-count');

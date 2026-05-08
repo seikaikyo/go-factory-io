@@ -85,6 +85,7 @@ body { font-family: var(--font); background: var(--bg-dark); color: var(--text);
 .sim-msg.rx .sim-msg-meta { color: var(--green); }
 .sim-msg-time { color: var(--text-dim); font-weight: 400; }
 .sim-msg-body { color: var(--text); white-space: pre-wrap; word-break: break-all; line-height: 1.4; }
+.sim-msg-body-empty { color: var(--text-dim); font-style: italic; font-size: 10px; opacity: 0.7; }
 .quick-btns { display: flex; flex-direction: column; gap: 4px; }
 .quick-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 12px; background: none; border: none; color: var(--text); cursor: pointer; font-size: 12px; font-family: var(--font); border-radius: 4px; transition: background 0.1s; }
 .quick-btn:hover { background: var(--bg-hover); }
