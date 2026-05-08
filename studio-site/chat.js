@@ -34,6 +34,15 @@ const CHAT_RULES = [
   {name: 'recipe-delete', tk: 'recipe-delete', api: () => call({stream: 7, function: 17, body: ''}), ok: 'chat.recipeDelete.ok', fail: 'chat.recipeDelete.fail'},
   {name: 'terminal-msg', tk: 'terminal-msg', api: () => call({stream: 10, function: 3, body: ''}), ok: 'chat.terminal.ok', fail: 'chat.terminal.fail'},
   {name: 'spool-toggle', tk: 'spool-toggle', api: () => call({stream: 6, function: 23, body: ''}), ok: 'chat.spool.ok', fail: 'chat.spool.fail'},
+  // Standard-specific intents (E5 / E37 / E40 / E84 / E87 / E90 / E94 / E116)
+  {name: 'linktest', tk: 'linktest', api: () => call({stream: 0, function: 1, body: ''}), ok: 'chat.linktest.ok', fail: 'chat.linktest.fail'},
+  {name: 'format-verify', tk: 'format-verify', api: () => call({stream: 1, function: 65, body: ''}), ok: 'chat.formatVerify.ok', fail: 'chat.formatVerify.fail'},
+  {name: 'material-handoff', tk: 'material-handoff', api: () => call({stream: 2, function: 19, body: ''}), ok: 'chat.materialHandoff.ok', fail: 'chat.materialHandoff.fail'},
+  {name: 'carrier-bind', tk: 'carrier-bind', api: () => call({stream: 3, function: 1, body: ''}), ok: 'chat.carrierBind.ok', fail: 'chat.carrierBind.fail'},
+  {name: 'substrate-state', tk: 'substrate-state', api: () => call({stream: 3, function: 31, body: ''}), ok: 'chat.substrateState.ok', fail: 'chat.substrateState.fail'},
+  {name: 'control-job', tk: 'control-job', api: () => call({stream: 16, function: 27, body: ''}), ok: 'chat.controlJob.ok', fail: 'chat.controlJob.fail'},
+  {name: 'ept-report', tk: 'ept-report', api: () => call({stream: 6, function: 19, body: ''}), ok: 'chat.eptReport.ok', fail: 'chat.eptReport.fail'},
+  {name: 'process-job', tk: 'process-job', api: () => call({stream: 16, function: 11, body: ''}), ok: 'chat.processJob.ok', fail: 'chat.processJob.fail'},
 ];
 
 function matchChatRule(query) {
