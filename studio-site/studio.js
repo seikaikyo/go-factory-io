@@ -5,6 +5,52 @@ const API_BASE = 'https://dashai-api.onrender.com/factory/api/v1/equipment/studi
 
 let lastTraceId = 0;
 let validationLog = [];
+let currentSimFilter = 'all';
+
+function updateSimCounts() {
+  const sim = document.getElementById('sim-feed');
+  if (!sim) return;
+  const tx = sim.querySelectorAll('.sim-msg.tx').length;
+  const rx = sim.querySelectorAll('.sim-msg.rx').length;
+  const txEl = document.getElementById('sim-tx-count');
+  const rxEl = document.getElementById('sim-rx-count');
+  if (txEl) txEl.textContent = tx + ' TX';
+  if (rxEl) rxEl.textContent = rx + ' RX';
+}
+
+function applySimFilter(filter) {
+  currentSimFilter = filter;
+  document.querySelectorAll('.sim-filter-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.filter === filter);
+  });
+  document.querySelectorAll('#sim-feed .sim-msg').forEach(m => {
+    const show = filter === 'all' || m.dataset.dir === filter;
+    m.style.display = show ? '' : 'none';
+  });
+}
+
+function clearSimFeed() {
+  const sim = document.getElementById('sim-feed');
+  if (!sim) return;
+  sim.innerHTML = '<div class="empty-state" style="padding:20px;font-size:12px">' +
+    ((typeof t === 'function') ? t('sim.feedEmpty') : 'No messages yet.') + '</div>';
+  updateSimCounts();
+}
+
+function loadTemplate(btn) {
+  document.getElementById('send-stream').value = btn.dataset.stream;
+  document.getElementById('send-function').value = btn.dataset.function;
+  document.getElementById('send-body').value = btn.dataset.body || '';
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const status = document.getElementById('send-status');
+  if (status) {
+    const tpl = btn.dataset.template;
+    const tt = (typeof t === 'function') ? t : (k => k);
+    status.className = 'send-status info';
+    status.textContent = tt('sim.templateLoaded', tpl);
+  }
+}
 
 // --- REST API ---
 async function apiGet(path) {
@@ -93,6 +139,7 @@ function appendTrace(entry) {
     if (sim.querySelector('.empty-state')) sim.innerHTML = '';
     const bubble = document.createElement('div');
     bubble.className = 'sim-msg ' + dirClass;
+    bubble.dataset.dir = dirClass;
     const rawBody = entry.bodySml || '';
     const isEmpty = !rawBody || rawBody === '(empty)' || rawBody === '(no payload)';
     const bodyHtml = isEmpty
@@ -100,6 +147,10 @@ function appendTrace(entry) {
       : '<div class="sim-msg-body">' + rawBody + '</div>';
     bubble.innerHTML = '<div class="sim-msg-meta"><span>' + entry.direction.toUpperCase() + ' ' + sf + '</span><span class="sim-msg-time">' + ts + '</span></div>' + bodyHtml;
     sim.prepend(bubble);
+    if (currentSimFilter !== 'all' && currentSimFilter !== dirClass) {
+      bubble.style.display = 'none';
+    }
+    updateSimCounts();
   }
 
   const c = document.getElementById('msg-count');
@@ -226,10 +277,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  document.querySelectorAll('[data-quick]').forEach(btn => {
-    btn.addEventListener('click', () => quickSend(btn.dataset.quick));
+  document.querySelectorAll('.quick-btn[data-template]').forEach(btn => {
+    btn.addEventListener('click', () => loadTemplate(btn));
   });
   document.getElementById('send-btn').addEventListener('click', rawSend);
+  document.querySelectorAll('.sim-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => applySimFilter(btn.dataset.filter));
+  });
+  const clearBtn = document.getElementById('sim-feed-clear');
+  if (clearBtn) clearBtn.addEventListener('click', clearSimFeed);
 
   startPolling();
 });

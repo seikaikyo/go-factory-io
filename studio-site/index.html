@@ -65,41 +65,63 @@
   </div>
 </div>
 
-<!-- Simulator -->
+<!-- Simulator (engineer view: raw SECS-II protocol editor) -->
 <div id="simulator" class="page">
   <div class="sim-layout">
     <div class="sim-sidebar">
       <div class="card">
-        <div class="card-header" data-i18n="sim.quickMessages">Quick Messages</div>
+        <div class="card-header">
+          <span data-i18n="sim.templatesTitle">Load Template</span>
+          <span style="font-size:11px;color:var(--text-dim);font-weight:400" data-i18n="sim.templatesHint">click to fill editor</span>
+        </div>
         <div class="card-body quick-btns">
-          <button class="quick-btn" data-quick="establish_comm"><span class="sf">S1F13</span> Establish Comm</button>
-          <button class="quick-btn" data-quick="are_you_there"><span class="sf">S1F1</span> Are You There</button>
-          <button class="quick-btn" data-quick="request_online"><span class="sf">S1F17</span> Request Online</button>
-          <button class="quick-btn" data-quick="request_offline"><span class="sf">S1F15</span> Request Offline</button>
-          <button class="quick-btn" data-quick="rcmd_start"><span class="sf">S2F41</span> RCMD START</button>
-          <button class="quick-btn" data-quick="event_report"><span class="sf">S6F11</span> Event Report</button>
-          <button class="quick-btn" data-quick="alarm_report"><span class="sf">S5F1</span> Alarm Report</button>
+          <button class="quick-btn" data-template="establish_comm" data-stream="1" data-function="13" data-body='L:2 { A "HOST", A "1.0.0" }'><span class="sf">S1F13</span> Establish Comm</button>
+          <button class="quick-btn" data-template="are_you_there" data-stream="1" data-function="1" data-body=""><span class="sf">S1F1</span> Are You There</button>
+          <button class="quick-btn" data-template="request_online" data-stream="1" data-function="17" data-body=""><span class="sf">S1F17</span> Request Online</button>
+          <button class="quick-btn" data-template="request_offline" data-stream="1" data-function="15" data-body=""><span class="sf">S1F15</span> Request Offline</button>
+          <button class="quick-btn" data-template="rcmd_start" data-stream="2" data-function="41" data-body='L:2 { A "START", L:0 }'><span class="sf">S2F41</span> RCMD START</button>
+          <button class="quick-btn" data-template="event_report" data-stream="6" data-function="11" data-body='L:3 { U4 1, U4 100, L:0 }'><span class="sf">S6F11</span> Event Report</button>
+          <button class="quick-btn" data-template="alarm_report" data-stream="5" data-function="1" data-body='L:3 { B:1 0x80, U4 3, A "TempHigh" }'><span class="sf">S5F1</span> Alarm Report</button>
+          <button class="quick-btn" data-template="linktest" data-stream="0" data-function="1" data-body=""><span class="sf">S0F1</span> HSMS Linktest</button>
         </div>
       </div>
     </div>
     <div>
       <div class="card">
-        <div class="card-header" data-i18n="sim.sendRaw">Send Raw Message</div>
+        <div class="card-header">
+          <span data-i18n="sim.sendRaw">SECS-II Message Editor</span>
+          <span style="font-size:11px;color:var(--text-dim);font-weight:400" data-i18n="sim.sendRawHint">engineer view — edit Stream / Function / SML body</span>
+        </div>
         <div class="card-body sim-send-grid">
           <div class="sim-send-controls">
-            <div style="display:flex;gap:12px;margin-bottom:12px;align-items:center">
+            <div style="display:flex;gap:12px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
               <label style="color:var(--text-dim);font-size:12px" data-i18n="sim.stream">Stream:</label>
               <input id="send-stream" type="number" value="1" min="0" max="127" style="width:60px;background:var(--bg-dark);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-family:var(--font)">
               <label style="color:var(--text-dim);font-size:12px" data-i18n="sim.function">Function:</label>
               <input id="send-function" type="number" value="13" min="0" max="255" style="width:60px;background:var(--bg-dark);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-family:var(--font)">
+              <span id="send-sml-hint" style="margin-left:auto;font-size:10px;color:var(--text-dim);font-style:italic" data-i18n="sim.smlHint">SML: A=ASCII U4=uint32 B=byte L:n={...}</span>
             </div>
-            <textarea id="send-body" class="editor" placeholder='L:2 { A "HOST" A "1.0.0" }'>L:2 { A "HOST" A "1.0.0" }</textarea>
+            <textarea id="send-body" class="editor" placeholder='L:2 { A "HOST", A "1.0.0" }'>L:2 { A "HOST", A "1.0.0" }</textarea>
             <div class="send-bar">
               <button id="send-btn" class="btn btn-primary" style="flex:1" data-i18n="sim.send">Send Message</button>
             </div>
             <div id="send-status" class="send-status"></div>
           </div>
-          <div id="sim-feed" class="sim-feed"><div class="empty-state" style="padding:20px;font-size:12px" data-i18n="sim.feedEmpty">No messages yet. Click Send Message to start.</div></div>
+          <div class="sim-feed-wrap">
+            <div class="sim-feed-header">
+              <span class="sim-feed-counts">
+                <span class="sim-feed-count tx" id="sim-tx-count">0 TX</span>
+                <span class="sim-feed-count rx" id="sim-rx-count">0 RX</span>
+              </span>
+              <div class="sim-feed-filters">
+                <button class="sim-filter-btn active" data-filter="all" data-i18n="sim.filterAll">All</button>
+                <button class="sim-filter-btn" data-filter="tx">TX</button>
+                <button class="sim-filter-btn" data-filter="rx">RX</button>
+                <button class="sim-feed-clear" id="sim-feed-clear" data-i18n="sim.clearFeed">Clear</button>
+              </div>
+            </div>
+            <div id="sim-feed" class="sim-feed"><div class="empty-state" style="padding:20px;font-size:12px" data-i18n="sim.feedEmpty">No messages yet. Click Send Message to start.</div></div>
+          </div>
         </div>
       </div>
     </div>
