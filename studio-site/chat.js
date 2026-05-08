@@ -1,6 +1,15 @@
 'use strict';
 
-async function call(spec) { return apiPost('/send', spec); }
+async function call(spec) {
+  const r = await apiPost('/send', spec);
+  // Sync the Dashboard immediately so state pills / wafer journey /
+  // jobs tree reflect the same mutation the bot reply describes,
+  // instead of waiting up to 3s for the next /state poll.
+  if (r && typeof renderDashboardState === 'function') {
+    renderDashboardState(r);
+  }
+  return r;
+}
 
 const CHAT_RULES = [
   {name: 'help', tk: 'help', handle: async () => ({type: 'info', text: t('chat.help')})},
