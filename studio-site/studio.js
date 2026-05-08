@@ -54,7 +54,8 @@ function setConnectionStatus(connected) {
   const el = document.getElementById('conn-status');
   const text = document.getElementById('conn-text');
   el.className = 'conn-status ' + (connected ? 'connected' : 'disconnected');
-  text.textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
+  const tt = (typeof t === 'function') ? t : (k => k);
+  text.textContent = tt(connected ? 'conn.connected' : 'conn.disconnected');
 }
 
 // --- Trace ---
