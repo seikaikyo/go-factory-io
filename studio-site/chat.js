@@ -65,13 +65,22 @@ function matchChatRule(query) {
   const q = query.toLowerCase().trim();
   const sf = q.match(/^[Ss](\d+)[Ff](\d+)/);
   if (sf) return {kind: 'sf', stream: parseInt(sf[1]), fn: parseInt(sf[2])};
+  // Longest-keyword wins across all rules so a generic keyword
+  // like "狀態" (status) doesn't shadow a specific one like
+  // "晶圓狀態" (substrate-state) just because of declaration order.
+  let best = null;
+  let bestLen = 0;
   for (const rule of CHAT_RULES) {
     const kws = (I18N_KEYWORDS && I18N_KEYWORDS[rule.tk]) || [];
     for (const kw of kws) {
-      if (q.includes(kw.toLowerCase())) return {kind: 'rule', rule};
+      const lk = kw.toLowerCase();
+      if (q.includes(lk) && lk.length > bestLen) {
+        best = rule;
+        bestLen = lk.length;
+      }
     }
   }
-  return null;
+  return best ? {kind: 'rule', rule: best} : null;
 }
 
 function chatBubble(role, text) {
