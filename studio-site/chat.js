@@ -93,9 +93,7 @@ async function streamText(bubble, text, speed = 12) {
       const delay = ch === '。' || ch === '.' ? speed * 4 : speed;
       await new Promise(r => setTimeout(r, delay));
     }
-    if (i % 6 === 0) bubble.scrollIntoView({block: 'nearest'});
   }
-  bubble.scrollIntoView({block: 'nearest'});
   bubble.classList.remove('streaming');
 }
 
@@ -120,8 +118,6 @@ async function chatSend(prefilled) {
   block.appendChild(u.wrap);
   const b = chatBubble('bot', '');
   block.appendChild(b.wrap);
-
-  block.scrollIntoView({block: 'start', behavior: 'smooth'});
 
   const stopThink = startThinking(b.bubble);
   await new Promise(r => setTimeout(r, 350 + Math.random() * 400));
