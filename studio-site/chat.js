@@ -21,7 +21,7 @@ const CHAT_RULES = [
   {name: 'enable-alarm', tk: 'enable-alarm', api: () => call({stream: 5, function: 3, body: ''}), ok: 'chat.enableAlarm.ok', fail: 'chat.enableAlarm.fail'},
   {name: 'disable-alarm', tk: 'disable-alarm', api: () => call({stream: 5, function: 3, body: ''}), ok: 'chat.disableAlarm.ok', fail: 'chat.disableAlarm.fail'},
   {name: 'alarms', tk: 'alarms', api: () => call({name: 'alarm_report'}), ok: 'chat.alarms.ok', fail: 'chat.alarms.fail', formatOk: r => t('chat.alarms.ok', r.unackedCount, r.alarmCount)},
-  {name: 'events', tk: 'events', api: () => call({name: 'event_report'}), ok: 'chat.events.ok', fail: 'chat.events.fail'},
+  {name: 'events', tk: 'events', api: () => call({name: 'event_report'}), ok: 'chat.events.ok', fail: 'chat.events.fail', formatOk: r => t('chat.events.ok', r.eventCount, (r.recentEvents || []).slice(0, 3))},
   {name: 'event-define', tk: 'event-define', api: () => call({stream: 2, function: 37, body: ''}), ok: 'chat.eventDef.ok', fail: 'chat.eventDef.fail'},
   {name: 'data-trace', tk: 'data-trace', api: () => call({stream: 6, function: 1, body: ''}), ok: 'chat.dataTrace.ok', fail: 'chat.dataTrace.fail'},
   {name: 'start', tk: 'start', api: () => call({name: 'rcmd_start'}), ok: 'chat.start.ok', fail: 'chat.start.fail', formatOk: r => t('chat.start.ok', r.processState)},
@@ -41,10 +41,10 @@ const CHAT_RULES = [
   {name: 'format-verify', tk: 'format-verify', api: () => call({stream: 1, function: 65, body: ''}), ok: 'chat.formatVerify.ok', fail: 'chat.formatVerify.fail', formatOk: r => t('chat.formatVerify.ok', r.verifyCount)},
   {name: 'material-handoff', tk: 'material-handoff', api: () => call({stream: 2, function: 19, body: ''}), ok: 'chat.materialHandoff.ok', fail: 'chat.materialHandoff.fail'},
   {name: 'carrier-bind', tk: 'carrier-bind', api: () => call({stream: 3, function: 1, body: ''}), ok: 'chat.carrierBind.ok', fail: 'chat.carrierBind.fail', formatOk: r => t('chat.carrierBind.ok', r.carrierId, r.portId)},
-  {name: 'substrate-state', tk: 'substrate-state', api: () => call({stream: 3, function: 31, body: ''}), ok: 'chat.substrateState.ok', fail: 'chat.substrateState.fail', formatOk: r => t('chat.substrateState.ok', r.substrateState)},
-  {name: 'control-job', tk: 'control-job', api: () => call({stream: 16, function: 27, body: ''}), ok: 'chat.controlJob.ok', fail: 'chat.controlJob.fail', formatOk: r => t('chat.controlJob.ok', r.newCjid, r.cjobCount)},
+  {name: 'substrate-state', tk: 'substrate-state', api: () => call({stream: 3, function: 31, body: ''}), ok: 'chat.substrateState.ok', fail: 'chat.substrateState.fail', formatOk: r => t('chat.substrateState.ok', r.substrateState, (r.substrateHistory || [])[0])},
+  {name: 'control-job', tk: 'control-job', api: () => call({stream: 16, function: 27, body: ''}), ok: 'chat.controlJob.ok', fail: 'chat.controlJob.fail', formatOk: r => t('chat.controlJob.ok', r.newCjid, (r.adoptedPjids || []).length, r.cjobCount)},
   {name: 'ept-report', tk: 'ept-report', api: () => call({stream: 6, function: 19, body: ''}), ok: 'chat.eptReport.ok', fail: 'chat.eptReport.fail', formatOk: r => t('chat.eptReport.ok', r.oee)},
-  {name: 'process-job', tk: 'process-job', api: () => call({stream: 16, function: 11, body: ''}), ok: 'chat.processJob.ok', fail: 'chat.processJob.fail', formatOk: r => t('chat.processJob.ok', r.newPjid, r.currentRecipe)},
+  {name: 'process-job', tk: 'process-job', api: () => call({stream: 16, function: 11, body: ''}), ok: 'chat.processJob.ok', fail: 'chat.processJob.fail', formatOk: r => t('chat.processJob.ok', r.newPjid, r.currentRecipe, r.parentCjid)},
 ];
 
 function matchChatRule(query) {
