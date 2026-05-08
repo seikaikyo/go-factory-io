@@ -167,13 +167,20 @@ function updateSendStatus(r, label) {
   const el = document.getElementById('send-status');
   if (!el) return;
   const ts = new Date().toLocaleTimeString('en-US', {hour12: false});
-  if (r) {
-    const stream = (r.sent || label).match(/^S(\d+)F/)?.[1] || '?';
-    el.className = 'send-status success';
-    el.textContent = `${ts}  Sent ${r.sent || label} → Reply S${stream}F${r.replied}`;
-  } else {
+  if (!r) {
     el.className = 'send-status error';
     el.textContent = `${ts}  Failed: ${label}`;
+    return;
+  }
+  el.className = 'send-status success';
+  const sent = r.sent || label;
+  if (typeof r.replied === 'number') {
+    const stream = sent.match(/^S(\d+)F/)?.[1] || '?';
+    el.textContent = `${ts}  Sent ${sent} → Reply S${stream}F${r.replied}`;
+  } else if (typeof r.steps === 'number') {
+    el.textContent = `${ts}  Sent ${sent} (${r.steps} steps)`;
+  } else {
+    el.textContent = `${ts}  Sent ${sent}`;
   }
 }
 
