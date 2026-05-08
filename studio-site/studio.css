@@ -252,6 +252,14 @@ textarea.editor:focus { border-color: var(--accent); }
 .ev-recipeselect, .ev-clocksync, .ev-collectionevent, .ev-alarmacked, .ev-controlstatechange { background: var(--bg-card); color: var(--text-dim); }
 .ev-detail { color: var(--text-dim); font-size: 11px; }
 
+.dash-action-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+.dash-action-row .dash-chat-card { display: flex; flex-direction: column; min-height: 480px; }
+.dash-action-row .dash-chat-card .card-body.chat-body { flex: 1; min-height: 0; padding: 0; display: flex; flex-direction: column; }
+.dash-action-row .chat-suggestions { padding: 10px 14px; max-height: 110px; overflow-y: auto; }
+.dash-action-row .chat-feed { flex: 1; min-height: 200px; }
+.dash-side-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.dash-side-col .card { flex: 1; }
+
 @media (max-width: 768px) {
   .state-row { gap: 8px; }
   .state-pill { padding: 6px 10px; font-size: 11px; }
@@ -259,4 +267,5 @@ textarea.editor:focus { border-color: var(--accent); }
   .journey-line { width: 2px; height: 24px; margin: 0 auto; }
   .journey-stop { min-width: 0; flex-direction: row; gap: 12px; padding: 4px 0; }
   .dash-row { grid-template-columns: 1fr !important; }
+  .dash-action-row { grid-template-columns: 1fr; }
 }
