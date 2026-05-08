@@ -94,8 +94,8 @@ function appendTrace(entry) {
     bubble.className = 'sim-msg ' + dirClass;
     bubble.innerHTML = '<div class="sim-msg-meta"><span>' + entry.direction.toUpperCase() + ' ' + sf + '</span><span class="sim-msg-time">' + ts + '</span></div>'
       + '<div class="sim-msg-body">' + (entry.bodySml || '(empty)') + '</div>';
-    sim.appendChild(bubble);
-    sim.scrollTop = sim.scrollHeight;
+    sim.prepend(bubble);
+    sim.scrollTop = 0;
   }
 
   const c = document.getElementById('msg-count');
