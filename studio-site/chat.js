@@ -15,10 +15,12 @@ const CHAT_RULES = [
   {name: 'collection-event', tk: 'collection-event', api: () => call({stream: 2, function: 33, body: ''}), ok: 'chat.ceid.ok', fail: 'chat.ceid.fail'},
   {name: 'clock-get', tk: 'clock-get', api: () => call({stream: 2, function: 17, body: ''}), ok: 'chat.clockGet.ok', fail: 'chat.clockGet.fail', formatOk: r => t('chat.clockGet.ok', r.clockDriftMs)},
   {name: 'clock-set', tk: 'clock-set', api: () => call({stream: 2, function: 31, body: ''}), ok: 'chat.clockSet.ok', fail: 'chat.clockSet.fail'},
-  {name: 'alarms', tk: 'alarms', api: () => call({name: 'alarm_report'}), ok: 'chat.alarms.ok', fail: 'chat.alarms.fail', formatOk: r => t('chat.alarms.ok', r.unackedCount, r.alarmCount)},
+  // Specific alarm subcommands first; generic 'alarms' must come last so
+  // chip text like "Ack Alarm" doesn't fall through to the listing intent.
+  {name: 'ack-alarm', tk: 'ack-alarm', api: () => call({stream: 5, function: 5, body: ''}), ok: 'chat.ackAlarm.ok', fail: 'chat.ackAlarm.fail', formatOk: r => t('chat.ackAlarm.ok', r.acked && r.acked.name, r.unackedCount)},
   {name: 'enable-alarm', tk: 'enable-alarm', api: () => call({stream: 5, function: 3, body: ''}), ok: 'chat.enableAlarm.ok', fail: 'chat.enableAlarm.fail'},
   {name: 'disable-alarm', tk: 'disable-alarm', api: () => call({stream: 5, function: 3, body: ''}), ok: 'chat.disableAlarm.ok', fail: 'chat.disableAlarm.fail'},
-  {name: 'ack-alarm', tk: 'ack-alarm', api: () => call({stream: 5, function: 5, body: ''}), ok: 'chat.ackAlarm.ok', fail: 'chat.ackAlarm.fail', formatOk: r => t('chat.ackAlarm.ok', r.acked && r.acked.name, r.unackedCount)},
+  {name: 'alarms', tk: 'alarms', api: () => call({name: 'alarm_report'}), ok: 'chat.alarms.ok', fail: 'chat.alarms.fail', formatOk: r => t('chat.alarms.ok', r.unackedCount, r.alarmCount)},
   {name: 'events', tk: 'events', api: () => call({name: 'event_report'}), ok: 'chat.events.ok', fail: 'chat.events.fail'},
   {name: 'event-define', tk: 'event-define', api: () => call({stream: 2, function: 37, body: ''}), ok: 'chat.eventDef.ok', fail: 'chat.eventDef.fail'},
   {name: 'data-trace', tk: 'data-trace', api: () => call({stream: 6, function: 1, body: ''}), ok: 'chat.dataTrace.ok', fail: 'chat.dataTrace.fail'},
