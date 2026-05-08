@@ -109,16 +109,40 @@ function appendTrace(entry) {
 function renderValidation() {
   const container = document.getElementById('validation-list');
   if (!container) return;
-  container.innerHTML = '';
-  for (const v of validationLog.slice(-50)) {
+
+  const stats = {pass: 0, warn: 0, fail: 0};
+  const dedup = new Map();
+  for (const v of validationLog) {
     const cls = ['pass','warn','fail'][v.level] || 'pass';
-    const label = ['OK','!','NG'][v.level] || 'OK';
-    const el = document.createElement('div');
-    el.className = 'check-item';
-    el.innerHTML = '<div class="check-icon ' + cls + '">' + label + '</div>'
-      + '<div><div class="check-text">' + (v.sf||'') + ' ' + v.message + '</div></div>';
-    container.appendChild(el);
+    stats[cls]++;
+    const key = (v.sf||'') + '|' + cls + '|' + (v.message||'');
+    if (dedup.has(key)) dedup.get(key).count++;
+    else dedup.set(key, {sf: v.sf, level: v.level, message: v.message, count: 1});
   }
+
+  const total = stats.pass + stats.warn + stats.fail;
+  const tt = (typeof t === 'function') ? t : (k => k);
+
+  let html = '<div class="val-stat-grid">'
+    + '<div class="val-stat pass"><div class="val-stat-num">' + stats.pass + '</div><div class="val-stat-label">' + tt('val.stat.pass') + '</div></div>'
+    + '<div class="val-stat warn"><div class="val-stat-num">' + stats.warn + '</div><div class="val-stat-label">' + tt('val.stat.warn') + '</div></div>'
+    + '<div class="val-stat fail"><div class="val-stat-num">' + stats.fail + '</div><div class="val-stat-label">' + tt('val.stat.fail') + '</div></div>'
+    + '<div class="val-stat total"><div class="val-stat-num">' + total + '</div><div class="val-stat-label">' + tt('val.stat.total') + '</div></div>'
+    + '</div>';
+
+  if (dedup.size === 0) {
+    html += '<div class="empty-state">' + tt('val.empty') + '</div>';
+  } else {
+    const sorted = [...dedup.values()].sort((a, b) => b.count - a.count);
+    for (const v of sorted) {
+      const cls = ['pass','warn','fail'][v.level] || 'pass';
+      const label = ['OK','!','NG'][v.level] || 'OK';
+      const countBadge = v.count > 1 ? '<span class="val-count">×' + v.count + '</span>' : '';
+      html += '<div class="check-item"><div class="check-icon ' + cls + '">' + label + '</div>'
+        + '<div class="check-row"><span class="check-text">' + (v.sf||'') + ' ' + (v.message||'') + '</span>' + countBadge + '</div></div>';
+    }
+  }
+  container.innerHTML = html;
 }
 
 // --- Report ---
