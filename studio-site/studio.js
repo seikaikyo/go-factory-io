@@ -88,6 +88,21 @@ async function runScenario(name) {
   const tt = (typeof t === 'function') ? t : (k => k);
   const status = document.getElementById('scenario-status');
   buttons.forEach(b => { b.disabled = true; b.classList.toggle('running', b.dataset.scenario === name); });
+
+  // Fresh slate: reset accumulated state from previous runs so the
+  // story (PJ created → CJ adopts it → wafer journey through all 5
+  // stops) reads cleanly every time.
+  if (status) status.textContent = tt('dash.runDemo.resetting');
+  try {
+    const r = await apiPost('/reset', {});
+    if (r && typeof renderDashboardState === 'function') renderDashboardState(r);
+    // Clear chat feed too so the new scenario isn't mixed with old replies
+    const feed = document.getElementById('chat-feed');
+    if (feed) feed.innerHTML = '<div class="empty-state" style="padding:40px;text-align:center;color:var(--text-dim);font-size:12px">' + tt('chat.empty') + '</div>';
+    if (typeof pollTrace === 'function') await pollTrace();
+  } catch (e) {}
+  await new Promise(r => setTimeout(r, 600));
+
   for (let i = 0; i < steps.length; i++) {
     if (status) status.textContent = tt('dash.runDemo.running', i + 1, steps.length, tt(steps[i].key));
     const chipBtn = document.querySelector(`[data-i18n='chat.suggest.${steps[i].chip}']`);
