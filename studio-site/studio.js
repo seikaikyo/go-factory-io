@@ -53,6 +53,7 @@ const SCENARIOS = {
     {chip: 'substrateState', key: 'dash.runDemo.step.unload'},     // S3F31 → AtDestination
     {chip: 'ackAlarm', key: 'dash.runDemo.step.ack'},              // S5F5
     {chip: 'status', key: 'dash.runDemo.step.status'},             // S1F1
+    {chip: 'substrateState', key: 'dash.runDemo.step.cleanup'},    // S3F31 from AtDestination clears wafer
   ],
   pause: [
     {chip: 'carrierBind', key: 'dash.runDemo.step.bind'},
@@ -66,6 +67,7 @@ const SCENARIOS = {
     {chip: 'stop', key: 'dash.runDemo.step.stop'},
     {chip: 'substrateState', key: 'dash.runDemo.step.unload'},
     {chip: 'status', key: 'dash.runDemo.step.status'},
+    {chip: 'substrateState', key: 'dash.runDemo.step.cleanup'},
   ],
   abort: [
     {chip: 'carrierBind', key: 'dash.runDemo.step.bind'},
@@ -77,6 +79,7 @@ const SCENARIOS = {
     {chip: 'alarms', key: 'dash.runDemo.step.alarmCheck'},         // query what fired
     {chip: 'ackAlarm', key: 'dash.runDemo.step.ack'},
     {chip: 'status', key: 'dash.runDemo.step.status'},
+    {chip: 'substrateState', key: 'dash.runDemo.step.cleanup'},
   ],
 };
 
@@ -231,12 +234,19 @@ function renderDashboardState(s) {
     stop.classList.remove('active', 'reached');
   });
   const order = ['AtSource', 'Loading', 'InProcess', 'Processed', 'AtDestination'];
-  const idx = order.indexOf(s.substrateState);
-  if (idx >= 0) {
-    document.querySelectorAll('.journey-stop').forEach((stop, i) => {
-      if (i < idx) stop.classList.add('reached');
-      else if (i === idx) stop.classList.add('active');
+  if (s.substrateState == null || s.substrateState === '') {
+    // Wafer has left the equipment — all stops marked reached, none active
+    document.querySelectorAll('.journey-stop').forEach(stop => {
+      stop.classList.add('reached');
     });
+  } else {
+    const idx = order.indexOf(s.substrateState);
+    if (idx >= 0) {
+      document.querySelectorAll('.journey-stop').forEach((stop, i) => {
+        if (i < idx) stop.classList.add('reached');
+        else if (i === idx) stop.classList.add('active');
+      });
+    }
   }
 
   // Active jobs tree
@@ -426,6 +436,7 @@ function renderReport(data) {
 async function quickSend(name) {
   const r = await apiPost('/send', {name});
   updateSendStatus(r, name);
+  if (r) renderDashboardState(r);
   setTimeout(pollTrace, 500);
 }
 
@@ -435,6 +446,7 @@ async function rawSend() {
   const body = document.getElementById('send-body').value;
   const r = await apiPost('/send', {stream, function: fn, body});
   updateSendStatus(r, `S${stream}F${fn}`);
+  if (r) renderDashboardState(r);
   setTimeout(pollTrace, 500);
 }
 

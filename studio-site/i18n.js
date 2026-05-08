@@ -91,6 +91,7 @@ const I18N = {
     'dash.runDemo.step.resume': 'Resume',
     'dash.runDemo.step.abort': 'Abort (emergency stop)',
     'dash.runDemo.step.alarmCheck': 'Query alarms (S5F1)',
+    'dash.runDemo.step.cleanup': 'Wafer leaves equipment (S3F31)',
     'sim.templatesTitle': 'Load Template',
     'sim.templatesHint': 'click to fill editor',
     'sim.sendRawHint': 'engineer view — edit Stream / Function / SML body',
@@ -137,7 +138,9 @@ const I18N = {
     'chat.carrierBind.fail': 'Carrier bind failed — port already bound or carrier ID conflict.',
     'chat.carrierBind.ok': (cid, pid) => `Carrier ${cid || 'CAR-1000'} bound to port ${pid || 'LP1'} S3F1 → S3F2 BPACK = 0 (E87)`,
     'chat.substrateState.fail': 'Substrate state query failed.',
-    'chat.substrateState.ok': (state, last) => `Substrate now: ${state || 'AtSource'} ${last ? `(last: ${last.from} → ${last.to} via ${last.cause})` : '(E90 substrate state mgmt)'}`,
+    'chat.substrateState.ok': (state, last) => state == null
+      ? `Wafer removed from equipment ${last ? `(last move: ${last.from} → out, via ${last.cause})` : '(E90 substrate state mgmt)'}`
+      : `Substrate now: ${state} ${last ? `(last: ${last.from} → ${last.to} via ${last.cause})` : '(E90 substrate state mgmt)'}`,
     'chat.controlJob.fail': 'Control job creation failed.',
     'chat.controlJob.ok': (cjid, adopted, total) => `Control job ${cjid || 'CJ-1001'} created ${adopted ? `adopted ${adopted} pending PJ${adopted > 1 ? 's' : ''}` : 'no pending PJ to adopt'} — ${total || 1} active CJ (E94)`,
     'chat.eptReport.fail': 'EPT report request failed — RPTID may not be defined.',
@@ -307,6 +310,7 @@ const I18N = {
     'dash.runDemo.step.resume': '再開',
     'dash.runDemo.step.abort': '中止（緊急停止）',
     'dash.runDemo.step.alarmCheck': 'アラーム照会（S5F1）',
+    'dash.runDemo.step.cleanup': 'ウェハ搬出（S3F31）',
     'sim.templatesTitle': 'テンプレート読込',
     'sim.templatesHint': 'クリックでエディタへ',
     'sim.sendRawHint': 'エンジニア視点 — Stream / Function / SML body を編集',
@@ -353,7 +357,9 @@ const I18N = {
     'chat.carrierBind.fail': 'キャリア紐付け失敗 — ポート既使用または ID 衝突の可能性。',
     'chat.carrierBind.ok': (cid, pid) => `キャリア ${cid || 'CAR-1000'} をポート ${pid || 'LP1'} に紐付け S3F1 → S3F2 BPACK = 0（E87）`,
     'chat.substrateState.fail': '基板状態照会失敗。',
-    'chat.substrateState.ok': (state, last) => `基板現在地：${state || 'AtSource'} ${last ? `(直前：${last.from} → ${last.to}、起因 ${last.cause})` : '（E90 基板状態管理）'}`,
+    'chat.substrateState.ok': (state, last) => state == null
+      ? `ウェハ装置外に搬出 ${last ? `(直前：${last.from} → 外、起因 ${last.cause})` : '（E90 基板状態管理）'}`
+      : `基板現在地：${state} ${last ? `(直前：${last.from} → ${last.to}、起因 ${last.cause})` : '（E90 基板状態管理）'}`,
     'chat.controlJob.fail': 'コントロールジョブ作成失敗。',
     'chat.controlJob.ok': (cjid, adopted, total) => `コントロールジョブ ${cjid || 'CJ-1001'} 作成 ${adopted ? `保留中 PJ ${adopted} 件を取込` : '取込対象 PJ なし'} — アクティブ ${total || 1} 件（E94）`,
     'chat.eptReport.fail': 'EPT レポート要求失敗 — RPTID が未定義の可能性。',
@@ -523,6 +529,7 @@ const I18N = {
     'dash.runDemo.step.resume': '恢復',
     'dash.runDemo.step.abort': '中止（緊急停止）',
     'dash.runDemo.step.alarmCheck': '警報查詢（S5F1）',
+    'dash.runDemo.step.cleanup': '晶圓離開設備（S3F31）',
     'sim.templatesTitle': '載入範本',
     'sim.templatesHint': '點選後填入編輯器',
     'sim.sendRawHint': '工程師視角 — 編輯 Stream / Function / SML body',
@@ -569,7 +576,9 @@ const I18N = {
     'chat.carrierBind.fail': 'Carrier 綁定失敗 — port 已綁或 carrier ID 衝突。',
     'chat.carrierBind.ok': (cid, pid) => `Carrier ${cid || 'CAR-1000'} 已綁到 port ${pid || 'LP1'} S3F1 → S3F2 BPACK = 0（E87）`,
     'chat.substrateState.fail': '晶圓狀態查詢失敗。',
-    'chat.substrateState.ok': (state, last) => `Substrate 目前位置：${state || 'AtSource'} ${last ? `(上一次 ${last.from} → ${last.to}，起因：${last.cause})` : '（E90 substrate 狀態管理）'}`,
+    'chat.substrateState.ok': (state, last) => state == null
+      ? `晶圓已離開設備 ${last ? `(上一次 ${last.from} → 離開，起因：${last.cause})` : '（E90 substrate 狀態管理）'}`
+      : `Substrate 目前位置：${state} ${last ? `(上一次 ${last.from} → ${last.to}，起因：${last.cause})` : '（E90 substrate 狀態管理）'}`,
     'chat.controlJob.fail': 'Control job 建立失敗。',
     'chat.controlJob.ok': (cjid, adopted, total) => `Control job ${cjid || 'CJ-1001'} 已建立 ${adopted ? `已 adopt 待派 PJ ${adopted} 筆` : '無待派 PJ 可 adopt'} — 目前 active CJ ${total || 1} 筆（E94）`,
     'chat.eptReport.fail': 'EPT report 請求失敗 — RPTID 可能未定義。',
