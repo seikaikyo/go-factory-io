@@ -90,6 +90,7 @@ body { font-family: var(--font); background: var(--bg-dark); color: var(--text);
 .quick-btn:hover { background: var(--bg-hover); }
 .quick-btn .sf { color: var(--cyan); font-weight: 600; min-width: 48px; }
 .sim-layout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; }
+@media (max-width: 640px) { .sim-layout { grid-template-columns: 1fr; } }
 .sim-sidebar { display: flex; flex-direction: column; gap: 12px; }
 .fault-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .fault-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: all 0.15s; font-family: var(--font); color: var(--text); }
