@@ -27,9 +27,9 @@ const CHAT_RULES = [
   {name: 'pause', tk: 'pause', api: () => call({stream: 2, function: 41, body: 'L:2 { A "PAUSE" L:0 }'}), ok: 'chat.pause.ok', fail: 'chat.pause.fail'},
   {name: 'resume', tk: 'resume', api: () => call({stream: 2, function: 41, body: 'L:2 { A "RESUME" L:0 }'}), ok: 'chat.resume.ok', fail: 'chat.resume.fail'},
   {name: 'abort', tk: 'abort', api: () => call({stream: 2, function: 41, body: 'L:2 { A "ABORT" L:0 }'}), ok: 'chat.abort.ok', fail: 'chat.abort.fail'},
-  {name: 'recipe-list', tk: 'recipe-list', api: () => call({stream: 7, function: 19, body: ''}), ok: 'chat.recipeList.ok', fail: 'chat.recipeList.fail'},
-  {name: 'recipe-current', tk: 'recipe-current', api: () => call({stream: 7, function: 25, body: ''}), ok: 'chat.recipeCurrent.ok', fail: 'chat.recipeCurrent.fail'},
-  {name: 'recipe-select', tk: 'recipe-select', api: () => call({stream: 7, function: 1, body: ''}), ok: 'chat.recipeSelect.ok', fail: 'chat.recipeSelect.fail'},
+  {name: 'recipe-list', tk: 'recipe-list', api: () => call({stream: 7, function: 19, body: ''}), ok: 'chat.recipeList.ok', fail: 'chat.recipeList.fail', formatOk: r => t('chat.recipeList.ok', (r.recipes || []).join(', '), r.currentRecipe)},
+  {name: 'recipe-current', tk: 'recipe-current', api: () => call({stream: 7, function: 25, body: ''}), ok: 'chat.recipeCurrent.ok', fail: 'chat.recipeCurrent.fail', formatOk: r => t('chat.recipeCurrent.ok', r.currentRecipe)},
+  {name: 'recipe-select', tk: 'recipe-select', api: () => call({stream: 7, function: 1, body: ''}), ok: 'chat.recipeSelect.ok', fail: 'chat.recipeSelect.fail', formatOk: r => t('chat.recipeSelect.ok', r.prevRecipe, r.currentRecipe)},
   {name: 'recipe-load', tk: 'recipe-load', api: () => call({stream: 7, function: 23, body: ''}), ok: 'chat.recipeLoad.ok', fail: 'chat.recipeLoad.fail'},
   {name: 'recipe-delete', tk: 'recipe-delete', api: () => call({stream: 7, function: 17, body: ''}), ok: 'chat.recipeDelete.ok', fail: 'chat.recipeDelete.fail'},
   {name: 'terminal-msg', tk: 'terminal-msg', api: () => call({stream: 10, function: 3, body: ''}), ok: 'chat.terminal.ok', fail: 'chat.terminal.fail'},
@@ -140,7 +140,12 @@ async function chatSend(prefilled) {
         result = await rule.handle();
       } else {
         const r = await rule.api();
-        result = r ? {type: 'success', text: t(rule.ok)} : {type: 'error', text: t(rule.fail)};
+        if (r) {
+          const text = rule.formatOk ? rule.formatOk(r) : t(rule.ok);
+          result = {type: 'success', text};
+        } else {
+          result = {type: 'error', text: t(rule.fail)};
+        }
       }
     }
   } catch (e) {
