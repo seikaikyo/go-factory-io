@@ -38,7 +38,79 @@
 
 <!-- Dashboard -->
 <div id="dashboard" class="page active">
-  <div class="stat-grid">
+  <div class="card">
+    <div class="card-header">
+      <span data-i18n="dash.equipmentState">Equipment State</span>
+      <span style="font-size:11px;color:var(--text-dim);font-weight:400" data-i18n="dash.equipmentStateHint">live snapshot — what the floor is actually doing</span>
+    </div>
+    <div class="card-body">
+      <div class="state-row">
+        <div class="state-pill" id="state-process">
+          <span class="state-dot"></span>
+          <span class="state-label" data-i18n="dash.processState.label">Process</span>
+          <span class="state-value" id="state-process-val">—</span>
+        </div>
+        <div class="state-pill" id="state-online">
+          <span class="state-dot"></span>
+          <span class="state-label" data-i18n="dash.onlineState.label">Connection</span>
+          <span class="state-value" id="state-online-val">—</span>
+        </div>
+        <div class="state-pill" id="state-recipe">
+          <span class="state-label" data-i18n="dash.recipe.label">Recipe</span>
+          <span class="state-value" id="state-recipe-val">—</span>
+        </div>
+        <div class="state-pill" id="state-alarm">
+          <span class="state-dot"></span>
+          <span class="state-label" data-i18n="dash.alarms.label">Alarms</span>
+          <span class="state-value" id="state-alarm-val">—</span>
+        </div>
+      </div>
+      <div class="substrate-journey">
+        <div class="substrate-title" data-i18n="dash.substrate.title">Wafer journey</div>
+        <div class="journey-track" id="journey-track">
+          <div class="journey-stop" data-stop="AtSource">
+            <div class="journey-dot"></div>
+            <div class="journey-label" data-i18n="dash.substrate.atSource">At source</div>
+          </div>
+          <div class="journey-line"></div>
+          <div class="journey-stop" data-stop="InProcess">
+            <div class="journey-dot"></div>
+            <div class="journey-label" data-i18n="dash.substrate.inProcess">In process</div>
+          </div>
+          <div class="journey-line"></div>
+          <div class="journey-stop" data-stop="AtDestination">
+            <div class="journey-dot"></div>
+            <div class="journey-label" data-i18n="dash.substrate.atDestination">At destination</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px" class="dash-row">
+    <div class="card">
+      <div class="card-header">
+        <span data-i18n="dash.activeJobs">Active jobs</span>
+        <span id="jobs-count" style="font-size:11px;color:var(--text-dim);font-weight:400">—</span>
+      </div>
+      <div class="card-body">
+        <div id="jobs-tree" class="jobs-tree">
+          <div class="empty-state" data-i18n="dash.noActiveJobs">No jobs yet — try Bind Carrier → Process Job → Control Job in Chat.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span data-i18n="dash.recentActivity">Recent activity</span>
+        <span style="font-size:11px;color:var(--text-dim);font-weight:400" data-i18n="dash.eventLogHint">last 10 from event log</span>
+      </div>
+      <div class="card-body">
+        <div id="activity-list" class="activity-list">
+          <div class="empty-state" data-i18n="dash.noActivity">No activity yet — interact via Chat or Simulator.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="stat-grid" style="margin-top:16px">
     <div class="stat-card">
       <div class="stat-label" data-i18n="dash.msgTraced">Messages Traced</div>
       <div id="msg-count" class="stat-value blue">0</div>
@@ -48,14 +120,14 @@
       <div id="val-count" class="stat-value green">0</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label" data-i18n="dash.pollingInterval">Polling Interval</div>
-      <div class="stat-value yellow">3s</div>
+      <div class="stat-label" data-i18n="dash.eventCount">Events Logged</div>
+      <div id="event-count" class="stat-value yellow">0</div>
     </div>
   </div>
-  <div class="card">
+  <div class="card" style="margin-top:16px">
     <div class="card-header">
       <span data-i18n="dash.liveFeed">Live Message Feed</span>
-      <span style="font-size:11px;color:var(--text-dim)" data-i18n="dash.autoRefresh">auto-refresh every 3s</span>
+      <span style="font-size:11px;color:var(--text-dim);font-weight:400" data-i18n="dash.autoRefresh">auto-refresh every 3s</span>
     </div>
     <div class="card-body">
       <div id="live-feed" class="feed">

@@ -91,9 +91,120 @@ async function pollTrace() {
   }
 }
 
+async function pollState() {
+  const state = await apiGet('/state');
+  if (!state) return;
+  renderDashboardState(state);
+}
+
 function startPolling() {
   pollTrace();
+  pollState();
   setInterval(pollTrace, 3000);
+  setInterval(pollState, 3000);
+}
+
+function renderDashboardState(s) {
+  const tt = (typeof t === 'function') ? t : (k => k);
+
+  // Process state pill
+  const proc = document.getElementById('state-process');
+  const procVal = document.getElementById('state-process-val');
+  if (proc && procVal) {
+    const ps = (s.processState || 'IDLE').toLowerCase();
+    proc.className = 'state-pill state-process state-process-' + ps;
+    procVal.textContent = tt('dash.processState.' + ps) || s.processState;
+  }
+
+  // Online pill
+  const online = document.getElementById('state-online');
+  const onlineVal = document.getElementById('state-online-val');
+  if (online && onlineVal) {
+    online.className = 'state-pill ' + (s.online ? 'state-online' : 'state-offline');
+    onlineVal.textContent = s.online
+      ? tt('dash.online') + ' / ' + (s.controlState || 'REMOTE')
+      : tt('dash.offline');
+  }
+
+  // Recipe pill
+  const recipeVal = document.getElementById('state-recipe-val');
+  if (recipeVal) recipeVal.textContent = s.currentRecipe || '—';
+
+  // Alarm pill
+  const alarm = document.getElementById('state-alarm');
+  const alarmVal = document.getElementById('state-alarm-val');
+  if (alarm && alarmVal) {
+    const unacked = s.unackedCount || 0;
+    alarm.className = 'state-pill ' + (unacked > 0 ? 'state-alarm-active' : 'state-alarm-clear');
+    alarmVal.textContent = unacked > 0
+      ? tt('dash.alarms.unacked', unacked)
+      : tt('dash.alarms.clear');
+  }
+
+  // Substrate journey
+  document.querySelectorAll('.journey-stop').forEach(stop => {
+    stop.classList.remove('active', 'reached');
+  });
+  const order = ['AtSource', 'InProcess', 'AtDestination'];
+  const idx = order.indexOf(s.substrateState);
+  if (idx >= 0) {
+    document.querySelectorAll('.journey-stop').forEach((stop, i) => {
+      if (i < idx) stop.classList.add('reached');
+      else if (i === idx) stop.classList.add('active');
+    });
+  }
+
+  // Active jobs tree
+  const tree = document.getElementById('jobs-tree');
+  const jobsCount = document.getElementById('jobs-count');
+  if (tree && jobsCount) {
+    const cjobs = s.cjobs || [];
+    const totalCj = s.cjobCount || 0;
+    const totalPj = s.pjobCount || 0;
+    jobsCount.textContent = totalCj + ' CJ / ' + totalPj + ' PJ';
+    if (cjobs.length === 0 && totalPj === 0) {
+      tree.innerHTML = '<div class="empty-state">' + tt('dash.noActiveJobs') + '</div>';
+    } else {
+      let html = '';
+      for (const cj of cjobs) {
+        html += '<div class="job-cj"><span class="job-icon">CJ</span><span class="job-id">' + cj.id + '</span>';
+        if (cj.pjobIds && cj.pjobIds.length) {
+          html += '<div class="job-children">';
+          for (const pjid of cj.pjobIds) {
+            html += '<div class="job-pj"><span class="job-icon pj">PJ</span><span class="job-id">' + pjid + '</span></div>';
+          }
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      // Orphan PJs (created without a CJ to adopt them yet)
+      if (totalPj > cjobs.reduce((a, c) => a + (c.pjobIds || []).length, 0)) {
+        html += '<div class="job-orphan-hint">' + tt('dash.orphanPjHint') + '</div>';
+      }
+      tree.innerHTML = html;
+    }
+  }
+
+  // Recent activity timeline
+  const list = document.getElementById('activity-list');
+  if (list) {
+    const events = s.recentEvents || [];
+    if (events.length === 0) {
+      list.innerHTML = '<div class="empty-state">' + tt('dash.noActivity') + '</div>';
+    } else {
+      list.innerHTML = events.map(e => {
+        const ts = new Date(e.time).toLocaleTimeString('en-US', {hour12: false});
+        const detail = e.detail ? '<span class="ev-detail">' + e.detail + '</span>' : '';
+        return '<div class="ev-row"><span class="ev-time">' + ts + '</span>'
+          + '<span class="ev-type ev-' + e.type.toLowerCase() + '">' + e.type + '</span>'
+          + detail + '</div>';
+      }).join('');
+    }
+  }
+
+  // Event count stat card
+  const ec = document.getElementById('event-count');
+  if (ec) ec.textContent = s.eventCount || 0;
 }
 
 function setConnectionStatus(connected) {
