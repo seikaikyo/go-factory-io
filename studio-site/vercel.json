@@ -5,6 +5,12 @@
       "has": [{ "type": "host", "value": "studio.dashai.dev" }],
       "destination": "https://studio.seikai.dev/:path*",
       "permanent": true
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "studio.dashai.dev" }],
+      "destination": "https://studio.seikai.dev/",
+      "permanent": true
     }
   ],
   "headers": [
