@@ -2,7 +2,7 @@
 
 Open-source SECS/GEM equipment driver in Go. Covers 12 SEMI standards, 5 communication protocols, and IEC 62443 SL4 security -- in a single static binary that runs on a Raspberry Pi.
 
-**[SECSGEM Studio](https://studio.dashai.dev)** | **[Live Demo](https://factory.dashai.dev/tv/equipment)** | [API Docs](#rest-api) | [Go Library](#go-library-usage)
+**[SECSGEM Studio](https://studio.seikai.dev)** | **[Live Demo](https://factory.seikai.dev/tv/equipment)** | [API Docs](#rest-api) | [Go Library](#go-library-usage)
 
 ## Why this project exists
 
@@ -70,7 +70,7 @@ go-factory-io extends the transport layer upward -- integrating carrier manageme
 
 Integrated simulator, validator, and protocol tracer with a built-in web UI.
 
-**[Try it live](https://studio.dashai.dev)**
+**[Try it live](https://studio.seikai.dev)**
 
 ```bash
 # Run locally with embedded web UI
@@ -364,7 +364,7 @@ go-factory-io/
 │       ├── hsms/          HSMS (E37)
 │       ├── modbus/        Modbus TCP
 │       └── opcua/         OPC-UA
-├── studio-site/           Static site for studio.dashai.dev
+├── studio-site/           Static site for studio.seikai.dev
 └── test/integration/      E2E tests
 ```
 
@@ -378,9 +378,9 @@ go test -v ./test/integration/         # E2E with simulator
 
 ## Live Demo
 
-- **[SECSGEM Studio](https://studio.dashai.dev)** -- Simulator, validator, and message tracer in the browser
-- **[Showcase](https://factory.dashai.dev/showcase)** -- Interactive exhibit: architecture, live data, security layers
-- **[Equipment Monitor](https://factory.dashai.dev/tv/equipment)** -- Real-time dashboard: OEE gauges, FOUP carriers, process job tracking
+- **[SECSGEM Studio](https://studio.seikai.dev)** -- Simulator, validator, and message tracer in the browser
+- **[Showcase](https://factory.seikai.dev/showcase)** -- Interactive exhibit: architecture, live data, security layers
+- **[Equipment Monitor](https://factory.seikai.dev/tv/equipment)** -- Real-time dashboard: OEE gauges, FOUP carriers, process job tracking
 
 ## Status
 
