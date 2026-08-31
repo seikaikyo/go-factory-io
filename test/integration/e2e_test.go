@@ -30,6 +30,9 @@ func setupTestEnv(t *testing.T) *testEnv {
 	cfg := simulator.DefaultEquipmentConfig()
 	cfg.ListenAddress = "127.0.0.1:0"
 	cfg.EventInterval = 0 // Disable auto events for deterministic tests
+	// The end-to-end flow covers S1F15/S1F17, S2F15, S2F33/35/37 and S2F41,
+	// all of which the default monitor policy denies.
+	cfg.AllowWrites = true
 
 	eq := simulator.NewEquipment(cfg, logger)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

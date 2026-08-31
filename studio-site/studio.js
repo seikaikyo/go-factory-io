@@ -3,6 +3,32 @@
 // Backend: dashai-api Python simulator
 const API_BASE = 'https://dashai-api.onrender.com/factory/api/v1/equipment/studio';
 
+// --- HTML escaping ---
+// Everything rendered below arrives from the remote API: SECS-II ASCII
+// payloads, validator messages, job identifiers and event details are all
+// device-controlled. None of it may reach innerHTML unescaped.
+function esc(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// escAttr escapes a value that lands inside a quoted HTML attribute.
+function escAttr(value) {
+  return esc(value);
+}
+
+// num coerces a value to a finite number before it is interpolated into
+// markup such as a CSS width.
+function num(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : (fallback || 0);
+}
+
 let lastTraceId = 0;
 let validationLog = [];
 let currentSimFilter = 'all';
@@ -262,11 +288,11 @@ function renderDashboardState(s) {
     } else {
       let html = '';
       for (const cj of cjobs) {
-        html += '<div class="job-cj"><span class="job-icon">CJ</span><span class="job-id">' + cj.id + '</span>';
+        html += '<div class="job-cj"><span class="job-icon">CJ</span><span class="job-id">' + esc(cj.id) + '</span>';
         if (cj.pjobIds && cj.pjobIds.length) {
           html += '<div class="job-children">';
           for (const pjid of cj.pjobIds) {
-            html += '<div class="job-pj"><span class="job-icon pj">PJ</span><span class="job-id">' + pjid + '</span></div>';
+            html += '<div class="job-pj"><span class="job-icon pj">PJ</span><span class="job-id">' + esc(pjid) + '</span></div>';
           }
           html += '</div>';
         }
@@ -289,9 +315,10 @@ function renderDashboardState(s) {
     } else {
       list.innerHTML = events.map(e => {
         const ts = new Date(e.time).toLocaleTimeString('en-US', {hour12: false});
-        const detail = e.detail ? '<span class="ev-detail">' + e.detail + '</span>' : '';
-        return '<div class="ev-row"><span class="ev-time">' + ts + '</span>'
-          + '<span class="ev-type ev-' + e.type.toLowerCase() + '">' + e.type + '</span>'
+        const detail = e.detail ? '<span class="ev-detail">' + esc(e.detail) + '</span>' : '';
+        const type = String(e.type || '');
+        return '<div class="ev-row"><span class="ev-time">' + esc(ts) + '</span>'
+          + '<span class="ev-type ev-' + escAttr(type.toLowerCase()) + '">' + esc(type) + '</span>'
           + detail + '</div>';
       }).join('');
     }
@@ -317,7 +344,7 @@ function appendTrace(entry) {
   if (feed.querySelector('.empty-state')) feed.innerHTML = '';
 
   const ts = new Date(entry.timestamp).toLocaleTimeString('en-US', {hour12:false, fractionalSecondDigits:1});
-  const sf = 'S' + entry.stream + 'F' + entry.function;
+  const sf = 'S' + num(entry.stream) + 'F' + num(entry.function);
   const dirClass = entry.direction === 'tx' ? 'tx' : 'rx';
 
   let badgeClass = 'pass', badgeText = 'PASS';
@@ -332,11 +359,11 @@ function appendTrace(entry) {
 
   const item = document.createElement('div');
   item.className = 'feed-item';
-  item.innerHTML = '<span class="feed-time">' + ts + '</span>'
-    + '<span class="feed-dir ' + dirClass + '">' + entry.direction.toUpperCase() + '</span>'
-    + '<span class="feed-sf">' + sf + '</span>'
-    + '<span class="feed-desc">' + (entry.bodySml || '(empty)').substring(0, 60) + '</span>'
-    + '<span class="feed-badge ' + badgeClass + '">' + badgeText + '</span>';
+  item.innerHTML = '<span class="feed-time">' + esc(ts) + '</span>'
+    + '<span class="feed-dir ' + escAttr(dirClass) + '">' + esc(dirClass.toUpperCase()) + '</span>'
+    + '<span class="feed-sf">' + esc(sf) + '</span>'
+    + '<span class="feed-desc">' + esc(String(entry.bodySml || '(empty)').substring(0, 60)) + '</span>'
+    + '<span class="feed-badge ' + escAttr(badgeClass) + '">' + esc(badgeText) + '</span>';
   feed.appendChild(item);
   feed.scrollTop = feed.scrollHeight;
 
@@ -350,8 +377,8 @@ function appendTrace(entry) {
     const isEmpty = !rawBody || rawBody === '(empty)' || rawBody === '(no payload)';
     const bodyHtml = isEmpty
       ? '<div class="sim-msg-body sim-msg-body-empty">' + ((typeof t === 'function') ? t('sim.noPayload') : 'no payload') + '</div>'
-      : '<div class="sim-msg-body">' + rawBody + '</div>';
-    bubble.innerHTML = '<div class="sim-msg-meta"><span>' + entry.direction.toUpperCase() + ' ' + sf + '</span><span class="sim-msg-time">' + ts + '</span></div>' + bodyHtml;
+      : '<div class="sim-msg-body">' + esc(rawBody) + '</div>';
+    bubble.innerHTML = '<div class="sim-msg-meta"><span>' + esc(dirClass.toUpperCase()) + ' ' + esc(sf) + '</span><span class="sim-msg-time">' + esc(ts) + '</span></div>' + bodyHtml;
     sim.prepend(bubble);
     if (currentSimFilter !== 'all' && currentSimFilter !== dirClass) {
       bubble.style.display = 'none';
@@ -397,9 +424,9 @@ function renderValidation() {
     for (const v of sorted) {
       const cls = ['pass','warn','fail'][v.level] || 'pass';
       const label = ['OK','!','NG'][v.level] || 'OK';
-      const countBadge = v.count > 1 ? '<span class="val-count">×' + v.count + '</span>' : '';
-      html += '<div class="check-item"><div class="check-icon ' + cls + '">' + label + '</div>'
-        + '<div class="check-row"><span class="check-text">' + (v.sf||'') + ' ' + (v.message||'') + '</span>' + countBadge + '</div></div>';
+      const countBadge = v.count > 1 ? '<span class="val-count">x' + num(v.count) + '</span>' : '';
+      html += '<div class="check-item"><div class="check-icon ' + escAttr(cls) + '">' + esc(label) + '</div>'
+        + '<div class="check-row"><span class="check-text">' + esc(v.sf||'') + ' ' + esc(v.message||'') + '</span>' + countBadge + '</div></div>';
     }
   }
   container.innerHTML = html;
@@ -415,10 +442,11 @@ function renderReport(data) {
   const bars = document.getElementById('coverage-bars');
   bars.innerHTML = '';
   for (const sc of data.standards) {
-    const color = sc.percentage >= 90 ? 'var(--green)' : sc.percentage >= 70 ? 'var(--yellow)' : 'var(--red)';
+    const pct = Math.max(0, Math.min(100, num(sc.percentage)));
+    const color = pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--yellow)' : 'var(--red)';
     bars.innerHTML += '<div class="coverage-bar-container">'
-      + '<div class="coverage-label"><span>' + sc.standard + '</span><span style="color:' + color + '">' + sc.percentage.toFixed(0) + '%</span></div>'
-      + '<div class="coverage-bar"><div class="coverage-fill" style="width:' + sc.percentage + '%;background:' + color + '"></div></div></div>';
+      + '<div class="coverage-label"><span>' + esc(sc.standard) + '</span><span style="color:' + color + '">' + pct.toFixed(0) + '%</span></div>'
+      + '<div class="coverage-bar"><div class="coverage-fill" style="width:' + pct + '%;background:' + color + '"></div></div></div>';
   }
 
   const tbody = document.getElementById('sf-tbody');
@@ -426,9 +454,9 @@ function renderReport(data) {
   for (const sf of data.sfDetail) {
     const cls = ['full','partial','none'][sf.status] || 'none';
     const label = ['FULL','PARTIAL','NONE'][sf.status] || 'NONE';
-    tbody.innerHTML += '<tr><td>S' + sf.stream + 'F' + sf.function + '</td>'
-      + '<td>' + sf.name + '</td><td>' + sf.direction + '</td><td>' + sf.standard + '</td>'
-      + '<td><span class="impl-badge ' + cls + '">' + label + '</span></td></tr>';
+    tbody.innerHTML += '<tr><td>S' + num(sf.stream) + 'F' + num(sf.function) + '</td>'
+      + '<td>' + esc(sf.name) + '</td><td>' + esc(sf.direction) + '</td><td>' + esc(sf.standard) + '</td>'
+      + '<td><span class="impl-badge ' + escAttr(cls) + '">' + esc(label) + '</span></td></tr>';
   }
 }
 

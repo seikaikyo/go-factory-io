@@ -3,6 +3,7 @@ package secs2
 import (
 	"bytes"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -443,11 +444,11 @@ func BenchmarkEncodeS6F11(b *testing.B) {
 		vars[i] = NewU4(uint32(i * 100))
 	}
 	item := NewList(
-		NewU4(1),            // DATAID
-		NewU4(1001),         // CEID
-		NewList(             // RPT list
-			NewList(         // RPT 1
-				NewU4(1),    // RPTID
+		NewU4(1),    // DATAID
+		NewU4(1001), // CEID
+		NewList( // RPT list
+			NewList( // RPT 1
+				NewU4(1),         // RPTID
 				NewList(vars...), // Variables
 			),
 		),
@@ -481,5 +482,89 @@ func BenchmarkDecodeS6F11(b *testing.B) {
 	b.ReportAllocs()
 	for range b.N {
 		_, _ = Decode(data)
+	}
+}
+
+// TestASCIIStringMarkupSafe covers the SML rendering of ASCII payloads. The
+// device controls this content and it is displayed in the Studio trace view,
+// so the rendering must not carry markup through.
+func TestASCIIStringMarkupSafe(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		absent  []string
+	}{
+		{
+			name:    "script tag",
+			payload: `<script>alert(1)</script>`,
+			absent:  []string{"<script", "</script", "<", ">"},
+		},
+		{
+			name:    "img onerror",
+			payload: `<img src=x onerror=alert(1)>`,
+			absent:  []string{"<img", "<", ">"},
+		},
+		{
+			name:    "entity smuggling",
+			payload: `&lt;script&gt;`,
+			absent:  []string{"&lt;", "&"},
+		},
+		{
+			name:    "attribute break out",
+			payload: `" onload="alert(1)`,
+			absent:  []string{`" onload="`},
+		},
+		{
+			name:    "control characters",
+			payload: "MDLN\x00\x1b[31m\x07",
+			absent:  []string{"\x00", "\x1b", "\x07"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rendered := NewASCII(tc.payload).String()
+			// The <A [n] ...> wrapper legitimately contains angle brackets;
+			// only the payload literal is under test.
+			body := payloadLiteral(t, rendered)
+			for _, bad := range tc.absent {
+				if strings.Contains(body, bad) {
+					t.Errorf("payload literal still contains %q\n  payload: %q\n  rendered: %s",
+						bad, tc.payload, rendered)
+				}
+			}
+		})
+	}
+}
+
+// payloadLiteral returns the quoted payload out of an <A [n] "..."> rendering.
+func payloadLiteral(t *testing.T, rendered string) string {
+	t.Helper()
+	start := strings.Index(rendered, `"`)
+	end := strings.LastIndex(rendered, `"`)
+	if start < 0 || end <= start {
+		t.Fatalf("rendering has no quoted payload: %s", rendered)
+	}
+	return rendered[start : end+1]
+}
+
+// TestASCIIStringKeepsPlainText checks the sanitizer does not mangle ordinary
+// SECS-II ASCII values, which is what the trace view exists to show.
+func TestASCIIStringKeepsPlainText(t *testing.T) {
+	for _, payload := range []string{"HOST", "1.0.0", "SIM-EQUIP-01", "PPID_A/B 42"} {
+		got := NewASCII(payload).String()
+		if !strings.Contains(got, payload) {
+			t.Errorf("plain payload %q not visible in rendering: %s", payload, got)
+		}
+	}
+}
+
+// TestASCIIStringReportsRawLength checks the declared length still describes
+// the payload on the wire, not the escaped rendering.
+func TestASCIIStringReportsRawLength(t *testing.T) {
+	payload := `<script>`
+	got := NewASCII(payload).String()
+	if !strings.Contains(got, "<A [8]") {
+		t.Errorf("expected the raw length 8 in the header, got: %s", got)
 	}
 }

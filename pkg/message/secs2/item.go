@@ -3,6 +3,7 @@ package secs2
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -273,6 +274,25 @@ func (it *Item) ToFloat64s() ([]float64, error) {
 
 // --- String representation ---
 
+// markupEscaper neutralises the characters a hostile ASCII payload would use
+// to break out of a text context and become markup. %q already escapes
+// control characters and backslashes; it leaves these three alone.
+//
+// This is defence in depth for consumers such as the Studio trace view. The
+// browser-side escaping is the primary control; this makes an escaping slip
+// non-exploitable rather than merely unlikely. The \x form matches Go's own
+// escape syntax, so the rendering stays unambiguous and reversible.
+var markupEscaper = strings.NewReplacer(
+	"<", `\x3c`,
+	">", `\x3e`,
+	"&", `\x26`,
+)
+
+// quoteASCII renders an ASCII payload as a quoted, markup-safe literal.
+func quoteASCII(s string) string {
+	return markupEscaper.Replace(strconv.Quote(s))
+}
+
 // String returns an SML-like string representation for debugging.
 func (it *Item) String() string {
 	return it.formatString(0)
@@ -297,7 +317,7 @@ func (it *Item) formatString(depth int) string {
 
 	case FormatASCII:
 		s, _ := it.ToASCII()
-		return fmt.Sprintf("%s<A [%d] %q>", indent, len(s), s)
+		return fmt.Sprintf("%s<A [%d] %s>", indent, len(s), quoteASCII(s))
 
 	case FormatBinary:
 		data, _ := it.ToBinary()

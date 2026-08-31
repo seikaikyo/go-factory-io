@@ -17,11 +17,14 @@ func startEquipment(t *testing.T) (*existingsim.Equipment, string) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := existingsim.EquipmentConfig{
-		ListenAddress:    ":0",
+		ListenAddress:    "127.0.0.1:0",
 		SessionID:        1,
 		ModelName:        "TEST-EQUIP",
 		SoftwareRevision: "1.0.0",
 		EventInterval:    0,
+		// These tests exercise state-changing messages (S2F41 RCMD), which
+		// the default monitor policy denies.
+		AllowWrites: true,
 	}
 	eq := existingsim.NewEquipment(cfg, logger)
 	ctx := context.Background()

@@ -267,15 +267,51 @@ func TestSSEBroadcast(t *testing.T) {
 	srv.sseClientsMu.Unlock()
 }
 
-func TestCORSHeaders(t *testing.T) {
-	srv, _ := setupTestServer(t)
-	w := doRequest(t, srv, "OPTIONS", "/api/status", "")
+// TestCORSAllowlist covers the origin allowlist that replaced the previous
+// Access-Control-Allow-Origin: * wildcard.
+func TestCORSAllowlist(t *testing.T) {
+	logger := slog.Default()
+	cfg := hsms.DefaultConfig("127.0.0.1:0", hsms.RolePassive, 1)
+	session := hsms.NewSession(cfg, logger)
+	handler := gem.NewHandler(session, 1, "TEST-EQ", "1.0.0", logger)
 
-	if w.Code != 204 {
-		t.Errorf("OPTIONS status: %d", w.Code)
+	tests := []struct {
+		name          string
+		allowed       []string
+		origin        string
+		method        string
+		wantStatus    int
+		wantACAOrigin string
+	}{
+		{"preflight allowlisted origin", []string{"https://ui.example.com"}, "https://ui.example.com", "OPTIONS", 204, "https://ui.example.com"},
+		{"preflight foreign origin", []string{"https://ui.example.com"}, "https://evil.example.com", "OPTIONS", 403, ""},
+		{"preflight no allowlist", nil, "https://ui.example.com", "OPTIONS", 403, ""},
+		{"preflight no origin header", []string{"https://ui.example.com"}, "", "OPTIONS", 403, ""},
+		{"GET allowlisted origin echoes it", []string{"https://ui.example.com"}, "https://ui.example.com", "GET", 200, "https://ui.example.com"},
+		{"GET foreign origin gets no header", []string{"https://ui.example.com"}, "https://evil.example.com", "GET", 200, ""},
+		{"GET no allowlist gets no header", nil, "https://ui.example.com", "GET", 200, ""},
 	}
-	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Error("missing CORS header")
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := NewServerWithAuth(session, handler, logger, Auth{}, CORS{AllowedOrigins: tc.allowed})
+			req := httptest.NewRequest(tc.method, "/api/status", nil)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			if w.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d", w.Code, tc.wantStatus)
+			}
+			if got := w.Header().Get("Access-Control-Allow-Origin"); got != tc.wantACAOrigin {
+				t.Errorf("Access-Control-Allow-Origin: got %q, want %q", got, tc.wantACAOrigin)
+			}
+			if got := w.Header().Get("Access-Control-Allow-Origin"); got == "*" {
+				t.Error("wildcard CORS origin must never be emitted")
+			}
+		})
 	}
 }
 
@@ -367,5 +403,128 @@ func TestAuthStatusEndpoint(t *testing.T) {
 	w := doAuthRequest(t, srv, "GET", "/api/status", "test-secret-token")
 	if w.Code != 200 {
 		t.Errorf("status with token: status %d, want 200", w.Code)
+	}
+}
+
+// --- Read/write scope separation ---
+
+func setupScopedServer(t *testing.T, auth Auth) *Server {
+	t.Helper()
+	logger := slog.Default()
+	cfg := hsms.DefaultConfig("127.0.0.1:0", hsms.RolePassive, 1)
+	session := hsms.NewSession(cfg, logger)
+	handler := gem.NewHandler(session, 1, "TEST-EQ", "1.0.0", logger)
+	handler.Variables().DefineEC(&gem.EquipmentConstant{
+		ECID: 1, Name: "Temperature", Value: float64(350.0), Units: "C",
+	})
+	handler.Variables().DefineSV(&gem.StatusVariable{
+		SVID: 1001, Name: "WaferCount", Value: uint32(42), Units: "pcs",
+	})
+	handler.Commands().Register("START", func(ctx context.Context, params []gem.CommandParam) gem.CommandStatus {
+		return gem.CommandOK
+	})
+	return NewServerWithAuth(session, handler, logger, auth, CORS{})
+}
+
+func doScopedRequest(t *testing.T, srv *Server, method, path, token, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	var r io.Reader
+	if body != "" {
+		r = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, r)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
+}
+
+// TestAuthScopeSeparation checks that a read token cannot reach the endpoints
+// that change equipment state, and that a read-only deployment closes them
+// entirely.
+func TestAuthScopeSeparation(t *testing.T) {
+	const (
+		readTok  = "read-token-aaaa"
+		writeTok = "write-token-bbbb"
+	)
+
+	both := Auth{ReadToken: readTok, WriteToken: writeTok}
+	readOnly := Auth{ReadToken: readTok}
+
+	tests := []struct {
+		name   string
+		auth   Auth
+		method string
+		path   string
+		body   string
+		token  string
+		want   int
+	}{
+		// Health stays public whatever is configured.
+		{"health needs no token", both, "GET", "/health", "", "", 200},
+
+		// Read endpoints.
+		{"read endpoint with read token", both, "GET", "/api/sv", "", readTok, 200},
+		{"read endpoint with write token", both, "GET", "/api/sv", "", writeTok, 200},
+		{"read endpoint without token", both, "GET", "/api/sv", "", "", 401},
+		{"read endpoint with wrong token", both, "GET", "/api/sv", "", "nope", 401},
+		{"alarms with read token", both, "GET", "/api/alarms", "", readTok, 200},
+		{"security status with read token", both, "GET", "/api/security/status", "", readTok, 200},
+
+		// PUT /api/ec is a write.
+		{"set EC with write token", both, "PUT", "/api/ec/1", `{"value":400}`, writeTok, 200},
+		{"set EC with read token is forbidden", both, "PUT", "/api/ec/1", `{"value":400}`, readTok, 403},
+		{"set EC without token", both, "PUT", "/api/ec/1", `{"value":400}`, "", 401},
+		{"set EC with wrong token", both, "PUT", "/api/ec/1", `{"value":400}`, "nope", 403},
+
+		// POST /api/command is a write.
+		{"command with write token", both, "POST", "/api/command", `{"command":"START"}`, writeTok, 200},
+		{"command with read token is forbidden", both, "POST", "/api/command", `{"command":"START"}`, readTok, 403},
+		{"command without token", both, "POST", "/api/command", `{"command":"START"}`, "", 401},
+
+		// A deployment with no write token has no credential that opens the
+		// write endpoints.
+		{"read-only deployment still serves reads", readOnly, "GET", "/api/sv", "", readTok, 200},
+		{"read-only deployment closes set EC", readOnly, "PUT", "/api/ec/1", `{"value":400}`, readTok, 403},
+		{"read-only deployment closes command", readOnly, "POST", "/api/command", `{"command":"START"}`, readTok, 403},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := setupScopedServer(t, tc.auth)
+			w := doScopedRequest(t, srv, tc.method, tc.path, tc.token, tc.body)
+			if w.Code != tc.want {
+				t.Errorf("%s %s: status %d, want %d (body: %s)",
+					tc.method, tc.path, w.Code, tc.want, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestSingleTokenGrantsBothScopes pins the documented behaviour of the
+// backwards-compatible NewServer signature.
+func TestSingleTokenGrantsBothScopes(t *testing.T) {
+	srv := setupScopedServer(t, Auth{ReadToken: "one-token", WriteToken: "one-token"})
+
+	if w := doScopedRequest(t, srv, "GET", "/api/sv", "one-token", ""); w.Code != 200 {
+		t.Errorf("read with single token: %d, want 200", w.Code)
+	}
+	if w := doScopedRequest(t, srv, "PUT", "/api/ec/1", "one-token", `{"value":400}`); w.Code != 200 {
+		t.Errorf("write with single token: %d, want 200", w.Code)
+	}
+}
+
+// TestAuthDisabledWhenNoTokens documents that a server with no tokens serves
+// unauthenticated; the binary refuses that combination on a non-loopback bind
+// (see security.RequireTokenForListen).
+func TestAuthDisabledWhenNoTokens(t *testing.T) {
+	srv := setupScopedServer(t, Auth{})
+	if w := doScopedRequest(t, srv, "GET", "/api/sv", "", ""); w.Code != 200 {
+		t.Errorf("unauthenticated read: %d, want 200", w.Code)
 	}
 }

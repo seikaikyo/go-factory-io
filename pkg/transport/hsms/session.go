@@ -20,9 +20,14 @@ import (
 // Session manages a single HSMS TCP connection, handling the HSMS state machine,
 // control messages, and data message routing.
 type Session struct {
-	config   Config
-	logger   *slog.Logger
-	state    atomic.Int32 // transport.State
+	config Config
+	logger *slog.Logger
+	state  atomic.Int32 // transport.State
+
+	// connMu guards conn, listener and cancel. They are written by the
+	// background accept goroutine (passive mode) and read by Close, the
+	// read/write paths and the timeout loops, which run on other goroutines.
+	connMu   sync.Mutex
 	conn     net.Conn
 	listener net.Listener
 
@@ -70,6 +75,52 @@ func (s *Session) State() transport.State {
 	return transport.State(s.state.Load())
 }
 
+// --- Guarded accessors for the connection fields ---
+
+func (s *Session) getConn() net.Conn {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	return s.conn
+}
+
+func (s *Session) setConn(c net.Conn) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	s.conn = c
+}
+
+func (s *Session) getListener() net.Listener {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	return s.listener
+}
+
+func (s *Session) setListener(l net.Listener) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	s.listener = l
+}
+
+func (s *Session) setCancel(fn context.CancelFunc) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	s.cancel = fn
+}
+
+func (s *Session) getCancel() context.CancelFunc {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	return s.cancel
+}
+
+// remoteAddr returns the peer address for logging, or "unknown".
+func (s *Session) remoteAddr() string {
+	if c := s.getConn(); c != nil {
+		return c.RemoteAddr().String()
+	}
+	return "unknown"
+}
+
 // Connect establishes the TCP connection based on the configured role.
 // For Passive mode, this starts listening and returns immediately.
 // The actual connection acceptance happens in the background.
@@ -104,9 +155,10 @@ func (s *Session) Connect(ctx context.Context) error {
 
 func (s *Session) startLoops() {
 	runCtx, cancel := context.WithCancel(context.Background())
-	s.cancel = cancel
+	s.setCancel(cancel)
 	go s.readLoop(runCtx)
 	go s.linktestLoop(runCtx)
+	s.startT7Timer(runCtx)
 }
 
 func (s *Session) connectActive(ctx context.Context) error {
@@ -134,7 +186,7 @@ func (s *Session) connectActive(ctx context.Context) error {
 		}
 	}
 
-	s.conn = conn
+	s.setConn(conn)
 	s.connStart = time.Now()
 	s.logger.Info("HSMS TCP connected", "remote", conn.RemoteAddr())
 	return nil
@@ -156,13 +208,17 @@ func (s *Session) listenPassive(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("hsms: listen %s: %w", s.config.Address, err)
 	}
-	s.listener = listener
+	s.setListener(listener)
 	s.logger.Info("HSMS listening on", "address", listener.Addr().String())
 	return nil
 }
 
 func (s *Session) acceptAndRun(ctx context.Context) {
-	conn, err := s.listener.Accept()
+	listener := s.getListener()
+	if listener == nil {
+		return
+	}
+	conn, err := listener.Accept()
 	if err != nil {
 		if !s.closed.Load() {
 			s.logger.Error("HSMS accept failed", "error", err)
@@ -185,7 +241,7 @@ func (s *Session) acceptAndRun(ctx context.Context) {
 		}
 	}
 
-	s.conn = conn
+	s.setConn(conn)
 	s.connStart = time.Now()
 	s.state.Store(int32(transport.StateConnected))
 	s.logger.Info("HSMS TCP accepted", "remote", conn.RemoteAddr())
@@ -224,11 +280,7 @@ func (s *Session) sessionTTLLoop(ctx context.Context) {
 		return
 	case <-timer.C:
 		if s.config.Auditor != nil {
-			remote := "unknown"
-			if s.conn != nil {
-				remote = s.conn.RemoteAddr().String()
-			}
-			s.config.Auditor.SessionExpired(remote, time.Since(s.connStart))
+			s.config.Auditor.SessionExpired(s.remoteAddr(), time.Since(s.connStart))
 		}
 		s.logger.Info("HSMS session TTL expired, closing")
 		s.Close()
@@ -237,11 +289,11 @@ func (s *Session) sessionTTLLoop(ctx context.Context) {
 
 // Addr returns the listener address (useful for Passive mode with port 0).
 func (s *Session) Addr() net.Addr {
-	if s.listener != nil {
-		return s.listener.Addr()
+	if l := s.getListener(); l != nil {
+		return l.Addr()
 	}
-	if s.conn != nil {
-		return s.conn.LocalAddr()
+	if c := s.getConn(); c != nil {
+		return c.LocalAddr()
 	}
 	return nil
 }
@@ -351,18 +403,18 @@ func (s *Session) Close() error {
 
 	s.logger.Info("HSMS closing session")
 
-	if s.cancel != nil {
-		s.cancel()
+	if cancel := s.getCancel(); cancel != nil {
+		cancel()
 	}
 
 	var errs []error
-	if s.conn != nil {
-		if err := s.conn.Close(); err != nil {
+	if c := s.getConn(); c != nil {
+		if err := c.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	if s.listener != nil {
-		if err := s.listener.Close(); err != nil {
+	if l := s.getListener(); l != nil {
+		if err := l.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -384,10 +436,11 @@ func (s *Session) writeMessage(msg *Message) error {
 	if err != nil {
 		return fmt.Errorf("hsms: marshal: %w", err)
 	}
-	if s.conn == nil {
+	conn := s.getConn()
+	if conn == nil {
 		return errors.New("hsms: no connection")
 	}
-	_, err = s.conn.Write(data)
+	_, err = conn.Write(data)
 	return err
 }
 
@@ -446,11 +499,7 @@ func (s *Session) readLoop(ctx context.Context) {
 			}
 			// Log malformed messages as security events
 			if s.config.Auditor != nil {
-				remote := "unknown"
-				if s.conn != nil {
-					remote = s.conn.RemoteAddr().String()
-				}
-				s.config.Auditor.MalformedMessage(remote, err)
+				s.config.Auditor.MalformedMessage(s.remoteAddr(), err)
 			}
 			s.logger.Error("HSMS read error", "error", err)
 			return
@@ -458,10 +507,7 @@ func (s *Session) readLoop(ctx context.Context) {
 
 		// Rate limit check (IEC 62443 FR7)
 		if s.rateLimiter != nil && !s.rateLimiter.Allow() {
-			remote := "unknown"
-			if s.conn != nil {
-				remote = s.conn.RemoteAddr().String()
-			}
+			remote := s.remoteAddr()
 			if s.config.Auditor != nil {
 				s.config.Auditor.RateLimited(remote, s.rateLimiter.Rate())
 			}
@@ -475,9 +521,14 @@ func (s *Session) readLoop(ctx context.Context) {
 }
 
 func (s *Session) readMessage() (*Message, error) {
+	conn := s.getConn()
+	if conn == nil {
+		return nil, errors.New("hsms: no connection")
+	}
+
 	// Read 4-byte length header
 	lenBuf := make([]byte, 4)
-	if _, err := io.ReadFull(s.conn, lenBuf); err != nil {
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
 		return nil, err
 	}
 	msgLen := binary.BigEndian.Uint32(lenBuf)
@@ -493,7 +544,7 @@ func (s *Session) readMessage() (*Message, error) {
 	// Read the rest of the message
 	msgBuf := make([]byte, 4+msgLen)
 	copy(msgBuf[0:4], lenBuf)
-	if _, err := io.ReadFull(s.conn, msgBuf[4:]); err != nil {
+	if _, err := io.ReadFull(conn, msgBuf[4:]); err != nil {
 		return nil, err
 	}
 
@@ -520,6 +571,13 @@ func (s *Session) handleMessage(ctx context.Context, msg *Message) {
 
 	switch msg.Header.SType {
 	case STypeDataMessage:
+		// SEMI E37: data messages are only valid on a Selected connection.
+		// Without this check a peer that completes the TCP handshake can skip
+		// Select and drive the equipment directly.
+		if s.State() != transport.StateSelected {
+			s.rejectNotSelected(msg)
+			return
+		}
 		select {
 		case s.inbound <- msg:
 		default:
@@ -546,6 +604,55 @@ func (s *Session) handleMessage(ctx context.Context, msg *Message) {
 	default:
 		s.logger.Warn("HSMS unhandled message type", "stype", msg.Header.SType)
 	}
+}
+
+// rejectNotSelected answers a data message that arrived before Select with
+// Reject.req (reason 4, entity not selected) and records it as a security
+// event. The payload is never handed to the application layer.
+func (s *Session) rejectNotSelected(msg *Message) {
+	remote := s.remoteAddr()
+	s.logger.Warn("HSMS data message before Select, rejecting",
+		"remote", remote, "state", s.State(),
+		"stream", msg.Header.Stream, "function", msg.Header.Function)
+
+	if s.config.Auditor != nil {
+		s.config.Auditor.UnauthorizedMessage(remote, msg.Header.Stream, msg.Header.Function)
+	}
+
+	rsp := NewRejectReq(msg.Header.SessionID, msg.Header.SystemID,
+		STypeDataMessage, RejectReasonEntityNotSelected)
+	if err := s.writeMessage(rsp); err != nil {
+		s.logger.Error("HSMS reject response failed", "error", err)
+	}
+}
+
+// startT7Timer enforces the SEMI E37 T7 not-selected timeout: a connection
+// that never reaches Selected is dropped. Config.T7 <= 0 disables it.
+func (s *Session) startT7Timer(ctx context.Context) {
+	if s.config.T7 <= 0 {
+		return
+	}
+	go func() {
+		timer := time.NewTimer(s.config.T7)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.done:
+			return
+		case <-timer.C:
+			if s.State() == transport.StateSelected || s.closed.Load() {
+				return
+			}
+			remote := s.remoteAddr()
+			if s.config.Auditor != nil {
+				s.config.Auditor.ConnectionRejected(remote, "T7 not-selected timeout")
+			}
+			s.logger.Warn("HSMS T7 not-selected timeout, closing connection",
+				"remote", remote, "t7", s.config.T7)
+			s.Close()
+		}
+	}()
 }
 
 func (s *Session) handleSelectReq(msg *Message) {

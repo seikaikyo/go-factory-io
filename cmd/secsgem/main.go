@@ -81,7 +81,45 @@ func runSimulator(logger *slog.Logger) {
 	webhookURL := fs.String("webhook-url", "", "Security event webhook URL")
 	syslogAddr := fs.String("syslog-addr", "", "Syslog server address (e.g., syslog.local:514)")
 
+	// Access control
+	apiToken := fs.String("api-token", "",
+		"Bearer token for read access to the REST/gRPC API (env "+security.EnvAPIToken+")")
+	apiWriteToken := fs.String("api-write-token", "",
+		"Bearer token for PUT /api/ec and POST /api/command (env "+security.EnvAPIWriteToken+"); "+
+			"without it the write endpoints stay closed")
+	corsOrigins := fs.String("cors-origin", "",
+		"Comma-separated browser origin allowlist (env "+security.EnvCORSOrigins+"); empty = same-origin only")
+	policyMode := fs.String("policy", "monitor",
+		"GEM access policy: monitor (read-only, default) or full (accepts state-changing messages)")
+
 	fs.Parse(os.Args[2:])
+
+	switch *policyMode {
+	case "monitor", "full":
+	default:
+		logger.Error("Invalid --policy value", "value", *policyMode, "want", "monitor or full")
+		os.Exit(1)
+	}
+
+	readToken := security.TokenFromEnv(*apiToken, security.EnvAPIToken)
+	writeToken := security.TokenFromEnv(*apiWriteToken, security.EnvAPIWriteToken)
+	origins := security.ParseOrigins(security.TokenFromEnv(*corsOrigins, security.EnvCORSOrigins))
+
+	// Fail closed: an API reachable beyond loopback must carry a token.
+	if err := security.RequireTokenForListen(readToken, *apiAddr, security.EnvAPIToken); err != nil {
+		logger.Error("Refusing to start", "error", err)
+		os.Exit(1)
+	}
+	if *grpcAddr != "" {
+		if err := security.RequireTokenForListen(readToken, *grpcAddr, security.EnvAPIToken); err != nil {
+			logger.Error("Refusing to start", "error", err)
+			os.Exit(1)
+		}
+	}
+	if writeToken == "" {
+		logger.Warn("No write token configured; PUT /api/ec and POST /api/command are closed",
+			"set", security.EnvAPIWriteToken)
+	}
 
 	cfg := simulator.EquipmentConfig{
 		ListenAddress:    *addr,
@@ -89,6 +127,7 @@ func runSimulator(logger *slog.Logger) {
 		ModelName:        *model,
 		SoftwareRevision: *version,
 		EventInterval:    *eventInterval,
+		AllowWrites:      *policyMode == "full",
 	}
 
 	eq := simulator.NewEquipment(cfg, logger)
@@ -147,7 +186,7 @@ func runSimulator(logger *slog.Logger) {
 	// Phase 4: gRPC server
 	var grpcServer *grpcapi.Server
 	if *grpcAddr != "" {
-		grpcServer = grpcapi.NewServer(eq.Session(), eq.Handler(), logger, "")
+		grpcServer = grpcapi.NewServer(eq.Session(), eq.Handler(), logger, readToken)
 		go func() {
 			if err := grpcServer.Serve(*grpcAddr); err != nil {
 				logger.Error("gRPC server error", "error", err)
@@ -157,7 +196,9 @@ func runSimulator(logger *slog.Logger) {
 	}
 
 	// Start REST API + Prometheus metrics
-	apiServer := rest.NewServer(eq.Session(), eq.Handler(), logger)
+	apiServer := rest.NewServerWithAuth(eq.Session(), eq.Handler(), logger,
+		rest.Auth{ReadToken: readToken, WriteToken: writeToken},
+		rest.CORS{AllowedOrigins: origins})
 	collector := metrics.NewCollector(*model)
 
 	mux := http.NewServeMux()
@@ -315,13 +356,32 @@ func waitForSignal(cancel context.CancelFunc) {
 func runStudio(logger *slog.Logger) {
 	fs := flag.NewFlagSet("studio", flag.ExitOnError)
 	port := fs.Int("port", 8080, "Web UI listen port")
+	bindHost := fs.String("host", "", "Listen host (default: all interfaces; use 127.0.0.1 for local-only)")
 	equipAddr := fs.String("equipment-addr", "", "External equipment address (default: embedded simulator)")
 	sessionID := fs.Int("session", 1, "Session ID")
+	token := fs.String("studio-token", "",
+		"Token for /ws and /api (env "+security.EnvStudioToken+"); without it a network-reachable "+
+			"studio serves read-only and refuses send/quick_send/fault/run_script")
+	corsOrigins := fs.String("cors-origin", "",
+		"Comma-separated browser origin allowlist for /ws and /api (env "+security.EnvCORSOrigins+")")
 	fs.Parse(os.Args[2:])
 
+	listenAddr := fmt.Sprintf("%s:%d", *bindHost, *port)
+	studioToken := security.TokenFromEnv(*token, security.EnvStudioToken)
+	loopbackOnly := security.IsLoopbackListen(listenAddr)
+
+	if studioToken == "" && !loopbackOnly {
+		logger.Warn("Studio has no token and is reachable from the network: "+
+			"serving read-only, equipment control commands are refused",
+			"set", security.EnvStudioToken, "address", listenAddr)
+	}
+
 	cfg := studio.Config{
-		EquipmentAddr: *equipAddr,
-		SessionID:     uint16(*sessionID),
+		EquipmentAddr:  *equipAddr,
+		SessionID:      uint16(*sessionID),
+		Token:          studioToken,
+		LoopbackOnly:   loopbackOnly,
+		AllowedOrigins: security.ParseOrigins(security.TokenFromEnv(*corsOrigins, security.EnvCORSOrigins)),
 	}
 
 	srv := studio.NewServer(cfg, logger)
@@ -347,12 +407,12 @@ func runStudio(logger *slog.Logger) {
 		os.Exit(1)
 	}
 
-	listenAddr := fmt.Sprintf(":%d", *port)
 	httpSrv := &http.Server{Addr: listenAddr, Handler: srv.Handler()}
 	go func() {
 		logger.Info("SECSGEM Studio running",
 			"url", fmt.Sprintf("http://localhost:%d", *port),
 			"equipment", addr,
+			"authenticated", studioToken != "",
 		)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("Studio HTTP error", "error", err)

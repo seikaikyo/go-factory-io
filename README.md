@@ -1,6 +1,8 @@
 # go-factory-io
 
-Open-source SECS/GEM equipment driver in Go. Covers 12 SEMI standards, 5 communication protocols, and IEC 62443 SL4 security -- in a single static binary that runs on a Raspberry Pi.
+Open-source SECS/GEM equipment driver in Go. Covers 12 SEMI standards, 5 communication protocols, and a set of security controls modelled on IEC 62443 -- in a single static binary that runs on a Raspberry Pi.
+
+This is an independent implementation, not certified or assessed against any SEMI or IEC standard. See [Security](#security) for what is enforced by default, what is opt-in, and what is an interface only.
 
 **[SECSGEM Studio](https://studio.seikai.dev)** | **[Live Demo](https://factory.seikai.dev/tv/equipment)** | [API Docs](#rest-api) | [Go Library](#go-library-usage)
 
@@ -29,8 +31,8 @@ go-factory-io builds on top of that groundwork. It integrates the 300mm fab stan
                   E94  Control Jobs
                   E116 EPT / OEE
 
-  Security        E187/E191 Cybersecurity
-                  IEC 62443 SL4
+  Security        E187/E191 Cybersecurity controls
+                  IEC 62443 aligned (uncertified)
 
   Multi-Protocol  OPC-UA, MQTT, Modbus TCP
                   REST, gRPC, SSE
@@ -63,8 +65,8 @@ go-factory-io extends the transport layer upward -- integrating carrier manageme
 | E90 | Substrate Tracking | Full (wafer location, movement history) |
 | E94 | Control Job Management | Full (scheduling, pause/resume) |
 | E116 | Equipment Performance Tracking | Full (OEE calculation, 11 states) |
-| E187 | Fab Equipment Cybersecurity | Implemented (TLS, RBAC, audit) |
-| E191 | Cybersecurity Status Reporting | Implemented (/api/security/status) |
+| E187 | Fab Equipment Cybersecurity | Partial: RBAC and audit logging are on by default; TLS and the IP allowlist are opt-in per connection. Not assessed against the standard. |
+| E191 | Cybersecurity Status Reporting | Partial: `/api/security/status` reports the tracker's own state, and only when one is attached. |
 
 ## SECSGEM Studio
 
@@ -74,9 +76,11 @@ Integrated simulator, validator, and protocol tracer with a built-in web UI.
 
 ```bash
 # Run locally with embedded web UI
-./secsgem studio --port 8080
+./secsgem studio --host 127.0.0.1 --port 8080
 # Open http://localhost:8080
 ```
+
+A loopback-bound studio needs no token. Exposing it on a network interface without `--studio-token` leaves it running but read-only: the trace, validator and report tabs work, while the commands that drive the equipment (`send`, `quick_send`, `fault`, `run_script`) are refused. Set `SECSGEM_STUDIO_TOKEN` and open the UI as `/?token=<token>` to enable them.
 
 Four tabs in one interface:
 
@@ -181,21 +185,23 @@ docker run -p 5000:5000 -p 8080:8080 secsgem
 
 ## REST API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check |
-| GET | `/api/status` | Equipment state (comm, control, transport) |
-| GET | `/api/sv` | List all Status Variables |
-| GET | `/api/sv/{svid}` | Get a specific SV |
-| GET | `/api/ec` | List all Equipment Constants |
-| GET | `/api/ec/{ecid}` | Get a specific EC |
-| PUT | `/api/ec/{ecid}` | Update an EC value |
-| GET | `/api/alarms` | List all alarms |
-| GET | `/api/alarms/active` | List active alarms |
-| POST | `/api/command` | Execute a remote command (RCMD) |
-| GET | `/api/events` | SSE stream for real-time events |
-| GET | `/api/security/status` | SEMI E191 cybersecurity status |
-| GET | `/metrics` | Prometheus metrics |
+| Method | Path | Description | Scope |
+|--------|------|-------------|-------|
+| GET | `/health` | Health check | public |
+| GET | `/api/status` | Equipment state (comm, control, transport) | read |
+| GET | `/api/sv` | List all Status Variables | read |
+| GET | `/api/sv/{svid}` | Get a specific SV | read |
+| GET | `/api/ec` | List all Equipment Constants | read |
+| GET | `/api/ec/{ecid}` | Get a specific EC | read |
+| PUT | `/api/ec/{ecid}` | Update an EC value | **write** |
+| GET | `/api/alarms` | List all alarms | read |
+| GET | `/api/alarms/active` | List active alarms | read |
+| POST | `/api/command` | Execute a remote command (RCMD) | **write** |
+| GET | `/api/events` | SSE stream for real-time events | read |
+| GET | `/api/security/status` | SEMI E191 cybersecurity status | read |
+| GET | `/metrics` | Prometheus metrics | public |
+
+Authorization is `Authorization: Bearer <token>`. Read scope comes from `--api-token` (`SECSGEM_API_TOKEN`), write scope from `--api-write-token` (`SECSGEM_API_WRITE_TOKEN`); the write token also satisfies read. Without a write token the two write endpoints return 403 to every caller. A listener bound beyond loopback refuses to start without a read token.
 
 All responses: `{ "success": true, "data": ... }` or `{ "success": false, "error": { "code": 400, "message": "..." } }`
 
@@ -317,28 +323,82 @@ client.Connect(ctx)
 val, _ := client.Read(ctx, "ns=2;s=Temperature")
 ```
 
-## Security (IEC 62443 SL4)
+## Security
 
-| Layer | Feature |
-|-------|---------|
-| Transport | TLS 1.2+, mTLS, IP allowlist, session TTL |
-| Access | Per-session RBAC, read-only mode, S/F allowlist/denylist |
-| Application | AES-256-GCM payload encryption, key rotation |
-| Monitoring | Security event audit, webhook/syslog forwarding, anomaly detection interface |
-| Certificate | CRL cache, OCSP checking |
-| Key Storage | HSM/PKCS#11 interface (software fallback for testing) |
-| Reporting | SEMI E191 cybersecurity status endpoint |
-| Safety | SEMI S2 alarm severity interlock (ForceOffline/ForceIdle) |
+The controls below are modelled on IEC 62443 and SEMI E187/E191. Nothing here has been certified or independently assessed; the standard names describe the intent, not a conformance claim.
+
+### On by default
+
+| Control | Behaviour | Where |
+|---------|-----------|-------|
+| GEM access policy | `gem.NewHandler` starts on `security.MonitorPolicy`: reads and handshake only. S2F41 RCMD, S2F15 set EC, S1F15/S1F17, S2F33/35/37 and S5F3 are denied until you opt in. | `pkg/driver/gem/handler.go` |
+| HSMS Select precondition | Data messages are rejected with Reject.req (entity not selected) unless the session is Selected. | `pkg/transport/hsms/session.go` |
+| T7 not-selected timeout | A connection that never selects is dropped after T7 (default 10s). | `pkg/transport/hsms/session.go` |
+| API authentication | A REST or gRPC listener bound beyond loopback refuses to start without `--api-token`. | `cmd/secsgem/main.go` |
+| Read/write scope split | `PUT /api/ec/{ecid}` and `POST /api/command` need `--api-write-token`. A read token alone gets 403; with no write token they are closed entirely. | `api/rest/handler.go` |
+| CORS | No `Access-Control-Allow-Origin` unless the request origin is on `--cors-origin`. There is no wildcard. | `api/rest/handler.go`, `pkg/studio/server.go` |
+| Studio WebSocket origin | Same-origin only, widened solely by `--cors-origin`. | `pkg/studio/server.go` |
+| Studio control commands | `send`, `quick_send`, `fault` and `run_script` require `--studio-token` unless the studio is bound to loopback. | `pkg/studio/server.go` |
+| Message size and rate caps | 16MB message ceiling; per-connection rate limit when configured. | `pkg/transport/hsms/` |
+| Output escaping | Device-supplied ASCII is escaped in the web UI and stripped of markup characters in the SML rendering. | `pkg/message/secs2/item.go`, `pkg/studio/web/studio.js` |
+
+### Opt-in
+
+| Control | How to enable |
+|---------|---------------|
+| TLS / mTLS on HSMS | Set `Config.TLSConfig`, or use `hsms.SecureConfig`. Plaintext otherwise. |
+| Peer IP allowlist | Set `Config.AllowedPeers`. Accepts any peer otherwise. |
+| Session TTL | Set `Config.SessionTTL`. Unlimited otherwise. |
+| Full GEM access | `handler.SetPolicy(security.FullAccessPolicy())`, or `secsgem simulate --policy full`. |
+| Security audit sink | `handler.SetAuditor(auditor)` plus `--webhook-url` or `--syslog-addr`. Events are logged locally otherwise. |
+| E191 status reporting | `restServer.SetSecurityStatus(...)`. The endpoint reports "not configured" otherwise. |
+| AES-256-GCM payload encryption | `pkg/security/encryption.go`. Not wired into any transport; call it from your own code. |
+| Safety interlock | `handler.SetSafetyInterlock(...)`. |
+
+### Interfaces only
+
+These exist as Go interfaces with a software implementation for testing. They are not wired to real hardware or a real PKI, and the binary never calls them.
+
+| Area | File |
+|------|------|
+| HSM / PKCS#11 key storage | `pkg/security/hsm.go` |
+| CRL cache and OCSP checking | `pkg/security/revocation.go` |
+| Anomaly detection | `pkg/security/anomaly.go` |
+
+### Running it
+
+```bash
+# Local development: loopback bind, no token needed.
+./secsgem studio --host 127.0.0.1 --port 8080
+./secsgem simulate --api 127.0.0.1:8080
+
+# Exposed: a token is mandatory, and writes need a second one.
+export SECSGEM_API_TOKEN=$(openssl rand -hex 32)
+export SECSGEM_API_WRITE_TOKEN=$(openssl rand -hex 32)
+./secsgem simulate --api :8080 --cors-origin https://ui.example.com --policy full
+
+# Studio exposed: without SECSGEM_STUDIO_TOKEN it still serves, read-only.
+export SECSGEM_STUDIO_TOKEN=$(openssl rand -hex 32)
+./secsgem studio --port 10000
+# then open http://host:10000/?token=$SECSGEM_STUDIO_TOKEN
+```
 
 ```go
-// One-line SL2 secure config
-cfg := hsms.SecureConfig("equip:5000", hsms.RoleActive, 1)
+// TLS plus an explicit GEM policy in library use.
+tlsCfg, _ := security.LoadClientTLS("client.crt", "client.key", "ca.crt")
+cfg := hsms.SecureConfig("equip:5000", hsms.RoleActive, 1, tlsCfg)
 
-// Or manual TLS + RBAC
-cfg.TLSConfig, _ = security.LoadClientTLS("client.crt", "client.key", "ca.crt")
-handler.SetPolicy(security.ReadOnlyPolicy())
+handler := gem.NewHandler(session, 1, "MDLN", "1.0.0", logger)
+handler.SetPolicy(security.ReadOnlyPolicy()) // default is MonitorPolicy, stricter still
 handler.SetAuditor(auditor)
 ```
+
+### Known gaps
+
+- The HSMS transport is plaintext unless you supply a TLS config; there is no certificate provisioning here.
+- Bearer tokens are static and shared. There is no rotation, expiry, or per-user identity.
+- The GEM policy governs SECS-II messages. The REST and gRPC surfaces are governed by the token scopes instead, so a write token can invoke a command the GEM monitor policy would refuse over HSMS.
+- The Studio token can be passed as a query parameter because browsers cannot set headers on a WebSocket; that value may appear in proxy access logs.
 
 ## Project Structure
 

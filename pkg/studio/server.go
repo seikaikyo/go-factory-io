@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 
 	existingsim "github.com/dashfactory/go-factory-io/examples/simulator"
 	"github.com/dashfactory/go-factory-io/pkg/message/secs2"
+	"github.com/dashfactory/go-factory-io/pkg/security"
 	"github.com/dashfactory/go-factory-io/pkg/simulator"
 	"github.com/dashfactory/go-factory-io/pkg/validator"
 )
@@ -29,6 +31,25 @@ var webFS embed.FS
 type Config struct {
 	EquipmentAddr string // External equipment address (empty = embedded simulator)
 	SessionID     uint16
+
+	// AllowedOrigins lists extra browser origins permitted to open the
+	// WebSocket and to make cross-origin REST calls. Empty means same-origin
+	// only, which is what the embedded UI needs.
+	AllowedOrigins []string
+
+	// Token gates /ws and /api/. When empty the WebSocket still connects and
+	// serves the read-only commands, but every command that drives the
+	// equipment (send, quick_send, fault, run_script) is refused unless
+	// LoopbackOnly is set.
+	Token string
+
+	// LoopbackOnly records that the HTTP listener is bound to loopback and is
+	// therefore unreachable from the network. It relaxes the token
+	// requirement for the equipment-driving commands so `secsgem studio`
+	// stays usable on a developer machine. Callers must derive it from the
+	// actual listen address (security.IsLoopbackListen), never from the
+	// client's remote address, which a proxy can forge.
+	LoopbackOnly bool
 }
 
 // Server serves the SECSGEM Studio web UI.
@@ -101,36 +122,93 @@ func (s *Server) setupRoutes() {
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWS)
 
-	// REST API endpoints (with CORS)
-	s.mux.HandleFunc("/api/status", s.cors(s.handleStatus))
-	s.mux.HandleFunc("/api/report", s.cors(s.handleReport))
-	s.mux.HandleFunc("/api/trace", s.cors(s.handleTrace))
+	// REST API endpoints (CORS allowlist + token)
+	s.mux.HandleFunc("/api/status", s.cors(s.auth(s.handleStatus)))
+	s.mux.HandleFunc("/api/report", s.cors(s.auth(s.handleReport)))
+	s.mux.HandleFunc("/api/trace", s.cors(s.auth(s.handleTrace)))
 }
 
+// cors echoes CORS headers only for an allowlisted origin. With no allowlist
+// configured the studio API is same-origin only.
 func (s *Server) cors(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(204)
+		origin := r.Header.Get("Origin")
+		allowed := security.OriginAllowed(s.config.AllowedOrigins, origin)
+
+		if allowed {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Add("Vary", "Origin")
+		}
+
+		if r.Method == http.MethodOptions {
+			if !allowed {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next(w, r)
 	}
 }
 
+// auth requires the configured token on /api/ routes. No token configured
+// means the studio is expected to be loopback-bound (enforced by the caller
+// via security.RequireTokenForListen), so the check is skipped.
+func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.config.Token == "" {
+			next(w, r)
+			return
+		}
+		if !s.tokenOK(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   map[string]interface{}{"code": 401, "message": "invalid or missing token"},
+			})
+			return
+		}
+		next(w, r)
+	}
+}
+
+// tokenOK validates the request credential against the configured token.
+//
+// The Authorization header is the preferred carrier. The `token` query
+// parameter exists because the browser WebSocket API cannot set request
+// headers; it is accepted on every route for consistency. Query credentials
+// can end up in access logs, so operators fronting the studio with a proxy
+// should prefer the header.
+func (s *Server) tokenOK(r *http.Request) bool {
+	if presented, ok := security.BearerToken(r.Header.Get("Authorization")); ok {
+		return security.CompareToken(s.config.Token, presented)
+	}
+	return security.CompareToken(s.config.Token, r.URL.Query().Get("token"))
+}
+
 // Handler returns the http.Handler.
 func (s *Server) Handler() http.Handler { return s.mux }
 
 // StartEquipment starts the embedded equipment simulator.
+//
+// It binds to loopback: the embedded simulator exists only for the studio's
+// own host to talk to, and a wildcard bind would publish an unauthenticated
+// HSMS endpoint on every interface alongside the web UI.
 func (s *Server) StartEquipment(ctx context.Context) (string, error) {
 	cfg := existingsim.EquipmentConfig{
-		ListenAddress:    ":0",
+		ListenAddress:    "127.0.0.1:0",
 		SessionID:        s.config.SessionID,
 		ModelName:        "STUDIO-EQUIP",
 		SoftwareRevision: "1.0.0",
 		EventInterval:    5 * time.Second,
+		// The sandbox simulator has to accept the messages the studio
+		// demonstrates. Reaching it means driving the studio host, which the
+		// WebSocket command gate already restricts.
+		AllowWrites: true,
 	}
 	s.equip = existingsim.NewEquipment(cfg, s.logger)
 	if err := s.equip.Start(ctx); err != nil {
@@ -212,14 +290,29 @@ func (s *Server) broadcast(msgType string, data interface{}) {
 // --- WebSocket Handler ---
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	// Reject before the upgrade so an unauthorized peer never gets a socket.
+	if s.config.Token != "" && !s.tokenOK(r) {
+		s.logger.Warn("WebSocket rejected: invalid or missing token", "remote", r.RemoteAddr)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// No InsecureSkipVerify: the library's default is same-origin, and
+	// OriginPatterns widens that only to explicitly configured hosts.
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
+		OriginPatterns: originPatterns(s.config.AllowedOrigins),
 	})
 	if err != nil {
-		s.logger.Error("WebSocket accept failed", "error", err)
+		s.logger.Error("WebSocket accept failed", "error", err, "remote", r.RemoteAddr,
+			"origin", r.Header.Get("Origin"))
 		return
 	}
 	defer c.Close(websocket.StatusNormalClosure, "")
+
+	// A socket authenticated with the token may drive the equipment, and so
+	// may a loopback-bound listener that nothing off-box can reach. Any other
+	// case is read-only.
+	privileged := s.config.Token != "" || s.config.LoopbackOnly
 
 	s.clientsMu.Lock()
 	s.clients[c] = struct{}{}
@@ -242,11 +335,37 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal(data, &msg); err != nil {
 			continue
 		}
-		s.handleWSCommand(r.Context(), c, msg)
+		s.handleWSCommand(r.Context(), c, msg, privileged)
 	}
 }
 
-func (s *Server) handleWSCommand(ctx context.Context, c *websocket.Conn, msg WSMessage) {
+// mutatingWSCommands drive the equipment: they compose and send SECS-II
+// traffic, inject faults, or run scripted sequences. They require a socket
+// authenticated with the studio token.
+var mutatingWSCommands = map[string]struct{}{
+	"send":       {},
+	"quick_send": {},
+	"fault":      {},
+	"run_script": {},
+}
+
+// IsMutatingWSCommand reports whether a WebSocket command drives the
+// equipment and therefore needs the studio token.
+func IsMutatingWSCommand(cmd string) bool {
+	_, ok := mutatingWSCommands[cmd]
+	return ok
+}
+
+func (s *Server) handleWSCommand(ctx context.Context, c *websocket.Conn, msg WSMessage, privileged bool) {
+	if IsMutatingWSCommand(msg.Type) && !privileged {
+		s.logger.Warn("WebSocket command refused: studio token not configured", "command", msg.Type)
+		s.sendTo(c, "error", map[string]string{
+			"message": "command '" + msg.Type + "' requires the studio token; start with --studio-token or " +
+				security.EnvStudioToken,
+		})
+		return
+	}
+
 	switch msg.Type {
 	case "send":
 		s.handleWSSend(ctx, msg.Data)
@@ -265,6 +384,38 @@ func (s *Server) handleWSCommand(ctx context.Context, c *websocket.Conn, msg WSM
 		s.trace = nil
 		s.traceMu.Unlock()
 	}
+}
+
+// sendTo writes a single envelope to one client.
+func (s *Server) sendTo(c *websocket.Conn, msgType string, data interface{}) {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	msgBytes, err := json.Marshal(WSMessage{Type: msgType, Data: payload})
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c.Write(ctx, websocket.MessageText, msgBytes)
+}
+
+// originPatterns converts the configured origin allowlist into the host
+// patterns nhooyr.io/websocket matches against the Origin header. A nil
+// result keeps the library's same-origin default.
+func originPatterns(origins []string) []string {
+	var out []string
+	for _, o := range origins {
+		host := o
+		if u, err := url.Parse(o); err == nil && u.Host != "" {
+			host = u.Host
+		}
+		if host != "" {
+			out = append(out, host)
+		}
+	}
+	return out
 }
 
 func (s *Server) handleWSSend(ctx context.Context, data json.RawMessage) {

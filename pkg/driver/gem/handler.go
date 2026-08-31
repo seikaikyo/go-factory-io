@@ -60,6 +60,17 @@ type sfKey struct {
 type MessageHandlerFunc func(ctx context.Context, msg *hsms.Message) (*secs2.Item, error)
 
 // NewHandler creates a GEM message handler.
+//
+// The handler starts under security.MonitorPolicy: read and handshake
+// messages are served, and everything that changes equipment state (S2F15
+// set EC, S2F41 RCMD, S1F15/S1F17 control-state changes, S5F3 alarm
+// enable/disable, report and event definition) is denied. Callers that need
+// write access must opt in explicitly:
+//
+//	handler.SetPolicy(security.FullAccessPolicy())
+//
+// This is deliberate: an unconfigured driver on a fab network should not be
+// able to command equipment.
 func NewHandler(session *hsms.Session, sessionID uint16, mdln, softrev string, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.Default()
@@ -68,6 +79,7 @@ func NewHandler(session *hsms.Session, sessionID uint16, mdln, softrev string, l
 		logger:         logger,
 		session:        session,
 		sessionID:      sessionID,
+		policy:         security.MonitorPolicy(),
 		state:          NewStateMachine(),
 		vars:           NewVariableStore(),
 		events:         NewEventManager(),

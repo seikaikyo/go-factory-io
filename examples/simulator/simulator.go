@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dashfactory/go-factory-io/pkg/driver/gem"
+	"github.com/dashfactory/go-factory-io/pkg/security"
 	"github.com/dashfactory/go-factory-io/pkg/transport/hsms"
 )
 
@@ -38,6 +39,14 @@ type EquipmentConfig struct {
 	// EventInterval is how often to generate simulated events.
 	// Set to 0 to disable automatic events.
 	EventInterval time.Duration
+
+	// AllowWrites installs security.FullAccessPolicy on the GEM handler so
+	// the simulator accepts state-changing messages (S2F41 RCMD, S2F15 set
+	// EC, S1F15/S1F17, report and event definition).
+	//
+	// Default false: the handler stays on the read-only monitor policy, which
+	// is what an unattended simulator on a shared network should do.
+	AllowWrites bool
 }
 
 // DefaultEquipmentConfig returns a sensible default configuration.
@@ -62,6 +71,10 @@ func NewEquipment(cfg EquipmentConfig, logger *slog.Logger) *Equipment {
 
 	session := hsms.NewSession(hsmsCfg, logger)
 	handler := gem.NewHandler(session, cfg.SessionID, cfg.ModelName, cfg.SoftwareRevision, logger)
+	if cfg.AllowWrites {
+		handler.SetPolicy(security.FullAccessPolicy())
+		logger.Warn("Simulator running with full access policy: state-changing SECS messages accepted")
+	}
 
 	eq := &Equipment{
 		session: session,

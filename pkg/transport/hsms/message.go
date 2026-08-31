@@ -240,6 +240,28 @@ func NewSeparateReq(sessionID uint16, systemID uint32) *Message {
 	}
 }
 
+// Reject.req reason codes per SEMI E37.
+const (
+	RejectReasonSTypeNotSupported  byte = 1
+	RejectReasonPTypeNotSupported  byte = 2
+	RejectReasonTransactionNotOpen byte = 3
+	RejectReasonEntityNotSelected  byte = 4
+)
+
+// NewRejectReq creates a Reject.req message. Per SEMI E37 the header carries
+// the SType of the offending message in byte 2 and the reason code in byte 3.
+func NewRejectReq(sessionID uint16, systemID uint32, offending SType, reason byte) *Message {
+	return &Message{
+		Header: Header{
+			SessionID: sessionID,
+			Stream:    byte(offending),
+			Function:  reason,
+			SType:     STypeRejectReq,
+			SystemID:  systemID,
+		},
+	}
+}
+
 // NewDataMessage creates a SECS-II data message.
 func NewDataMessage(sessionID uint16, stream, function byte, wbit bool, systemID uint32, data []byte) *Message {
 	return &Message{

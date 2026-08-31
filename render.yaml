@@ -8,3 +8,9 @@ services:
     envVars:
       - key: TZ
         value: Asia/Taipei
+      # Without this the studio still starts and serves the read-only views,
+      # but refuses the commands that drive the equipment. Render generates
+      # the value on first deploy; read it from the dashboard to use the UI
+      # at /?token=<value>.
+      - key: SECSGEM_STUDIO_TOKEN
+        generateValue: true

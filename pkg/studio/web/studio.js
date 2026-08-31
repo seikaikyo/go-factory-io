@@ -4,10 +4,41 @@ let ws = null;
 let traceLog = [];
 let validationLog = [];
 
+// --- HTML escaping ---
+// Every value below originates from the equipment: SECS-II ASCII payloads,
+// validator messages and schema names all arrive over the wire. None of it may
+// reach innerHTML unescaped.
+function esc(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// escAttr escapes a value that lands inside a quoted HTML attribute.
+function escAttr(value) {
+  return esc(value);
+}
+
+// num coerces a value to a finite number for interpolation into markup such as
+// CSS widths, so a hostile payload cannot inject style or markup there.
+function num(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : (fallback || 0);
+}
+
 // --- WebSocket ---
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(proto + '//' + location.host + '/ws');
+  // When the studio runs with --studio-token the operator opens the UI as
+  // /?token=<token>; forward it to the socket, because the browser WebSocket
+  // API cannot set an Authorization header.
+  const token = new URLSearchParams(location.search).get('token');
+  const query = token ? '?token=' + encodeURIComponent(token) : '';
+  ws = new WebSocket(proto + '//' + location.host + '/ws' + query);
   ws.onopen = () => {
     document.getElementById('conn-status').className = 'conn-status connected';
     document.getElementById('conn-text').textContent = 'CONNECTED';
@@ -52,9 +83,9 @@ function appendTrace(entry) {
   if (!feed) return;
 
   const ts = new Date(entry.timestamp).toLocaleTimeString('en-US', {hour12:false, fractionalSecondDigits:1});
-  const sf = 'S' + entry.stream + 'F' + entry.function;
+  const sf = 'S' + num(entry.stream) + 'F' + num(entry.function);
   const dirClass = entry.direction === 'tx' ? 'tx' : 'rx';
-  const dirLabel = entry.direction.toUpperCase();
+  const dirLabel = dirClass.toUpperCase();
 
   let badgeClass = 'pass';
   let badgeText = 'PASS';
@@ -75,11 +106,11 @@ function appendTrace(entry) {
 
   const item = document.createElement('div');
   item.className = 'feed-item';
-  item.innerHTML = '<span class="feed-time">' + ts + '</span>'
-    + '<span class="feed-dir ' + dirClass + '">' + dirLabel + '</span>'
-    + '<span class="feed-sf">' + sf + '</span>'
-    + '<span class="feed-desc">' + (entry.bodySml || '(empty)').substring(0, 60) + '</span>'
-    + '<span class="feed-badge ' + badgeClass + '">' + badgeText + '</span>';
+  item.innerHTML = '<span class="feed-time">' + esc(ts) + '</span>'
+    + '<span class="feed-dir ' + escAttr(dirClass) + '">' + esc(dirLabel) + '</span>'
+    + '<span class="feed-sf">' + esc(sf) + '</span>'
+    + '<span class="feed-desc">' + esc(String(entry.bodySml || '(empty)').substring(0, 60)) + '</span>'
+    + '<span class="feed-badge ' + escAttr(badgeClass) + '">' + esc(badgeText) + '</span>';
   feed.appendChild(item);
   feed.scrollTop = feed.scrollHeight;
 
@@ -101,8 +132,8 @@ function renderValidation() {
     const label = labelMap[v.level] || 'OK';
     const item = document.createElement('div');
     item.className = 'check-item';
-    item.innerHTML = '<div class="check-icon ' + cls + '">' + label + '</div>'
-      + '<div><div class="check-text">' + (v.sf || '') + ' ' + v.message + '</div></div>';
+    item.innerHTML = '<div class="check-icon ' + escAttr(cls) + '">' + esc(label) + '</div>'
+      + '<div><div class="check-text">' + esc(v.sf || '') + ' ' + esc(v.message) + '</div></div>';
     container.appendChild(item);
   }
 }
@@ -119,10 +150,11 @@ function renderReport(data) {
   const barsEl = document.getElementById('coverage-bars');
   barsEl.innerHTML = '';
   for (const sc of data.standards) {
-    const color = sc.percentage >= 90 ? 'var(--green)' : sc.percentage >= 70 ? 'var(--yellow)' : 'var(--red)';
+    const pct = Math.max(0, Math.min(100, num(sc.percentage)));
+    const color = pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--yellow)' : 'var(--red)';
     barsEl.innerHTML += '<div class="coverage-bar-container">'
-      + '<div class="coverage-label"><span>' + sc.standard + '</span><span style="color:' + color + '">' + sc.percentage.toFixed(0) + '%</span></div>'
-      + '<div class="coverage-bar"><div class="coverage-fill" style="width:' + sc.percentage + '%;background:' + color + '"></div></div>'
+      + '<div class="coverage-label"><span>' + esc(sc.standard) + '</span><span style="color:' + color + '">' + pct.toFixed(0) + '%</span></div>'
+      + '<div class="coverage-bar"><div class="coverage-fill" style="width:' + pct + '%;background:' + color + '"></div></div>'
       + '</div>';
   }
 
@@ -134,24 +166,25 @@ function renderReport(data) {
     const labelMap = {0: 'FULL', 1: 'PARTIAL', 2: 'NONE'};
     const cls = statusMap[sf.status] || 'none';
     const label = labelMap[sf.status] || 'NONE';
-    tbody.innerHTML += '<tr><td>S' + sf.stream + 'F' + sf.function + '</td>'
-      + '<td>' + sf.name + '</td>'
-      + '<td>' + sf.direction + '</td>'
-      + '<td>' + sf.standard + '</td>'
-      + '<td><span class="impl-badge ' + cls + '">' + label + '</span></td></tr>';
+    tbody.innerHTML += '<tr><td>S' + num(sf.stream) + 'F' + num(sf.function) + '</td>'
+      + '<td>' + esc(sf.name) + '</td>'
+      + '<td>' + esc(sf.direction) + '</td>'
+      + '<td>' + esc(sf.standard) + '</td>'
+      + '<td><span class="impl-badge ' + escAttr(cls) + '">' + esc(label) + '</span></td></tr>';
   }
 }
 
 function renderScriptResult(result) {
-  let html = '<div class="card"><div class="card-header">Script: ' + result.name
-    + ' <span style="color:' + (result.failed > 0 ? 'var(--red)' : 'var(--green)') + '">'
-    + result.passed + ' passed, ' + result.failed + ' failed</span></div><div class="card-body">';
-  for (const s of result.steps) {
+  const failed = num(result.failed);
+  let html = '<div class="card"><div class="card-header">Script: ' + esc(result.name)
+    + ' <span style="color:' + (failed > 0 ? 'var(--red)' : 'var(--green)') + '">'
+    + num(result.passed) + ' passed, ' + failed + ' failed</span></div><div class="card-body">';
+  for (const s of (result.steps || [])) {
     const cls = s.status === 'pass' ? 'pass' : s.status === 'fail' ? 'fail' : 'warn';
-    html += '<div class="check-item"><div class="check-icon ' + cls + '">'
+    html += '<div class="check-item"><div class="check-icon ' + escAttr(cls) + '">'
       + (s.status === 'pass' ? 'OK' : s.status === 'fail' ? 'NG' : '!') + '</div>'
-      + '<div><div class="check-text">Step ' + s.step + ': ' + s.action + '</div>'
-      + '<div class="check-detail">' + s.detail + '</div></div></div>';
+      + '<div><div class="check-text">Step ' + num(s.step) + ': ' + esc(s.action) + '</div>'
+      + '<div class="check-detail">' + esc(s.detail) + '</div></div></div>';
   }
   html += '</div></div>';
   document.getElementById('script-results').innerHTML = html;

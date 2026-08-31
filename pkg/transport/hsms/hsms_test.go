@@ -290,3 +290,206 @@ func BenchmarkMessageUnmarshal(b *testing.B) {
 		_ = m.UnmarshalBinary(data)
 	}
 }
+
+// --- Select precondition and T7 ---
+
+// setupConnectedUnselectedPair creates an active+passive pair whose TCP
+// handshake is complete but which never performed Select.
+func setupConnectedUnselectedPair(t *testing.T, logger *slog.Logger, t7 time.Duration) (*Session, *Session) {
+	t.Helper()
+
+	passiveCfg := DefaultConfig("127.0.0.1:0", RolePassive, 0x0001)
+	passiveCfg.LinktestInterval = 0
+	passiveCfg.T7 = t7
+	passive := NewSession(passiveCfg, logger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := passive.Connect(ctx); err != nil {
+		t.Fatalf("passive connect: %v", err)
+	}
+
+	activeCfg := DefaultConfig(passive.Addr().String(), RoleActive, 0x0001)
+	activeCfg.LinktestInterval = 0
+	activeCfg.T7 = 0 // Only the passive side is under test.
+	active := NewSession(activeCfg, logger)
+
+	if err := active.Connect(ctx); err != nil {
+		passive.Close()
+		t.Fatalf("active connect: %v", err)
+	}
+
+	// Let the passive side finish accepting.
+	time.Sleep(50 * time.Millisecond)
+	return active, passive
+}
+
+// TestDataMessageBeforeSelect covers the SEMI E37 precondition: a peer that
+// completes the TCP handshake but skips Select must not be able to deliver
+// data messages to the application.
+func TestDataMessageBeforeSelect(t *testing.T) {
+	logger := slog.Default()
+	active, passive := setupConnectedUnselectedPair(t, logger, 0)
+	defer active.Close()
+	defer passive.Close()
+
+	if got := passive.State(); got == transport.StateSelected {
+		t.Fatalf("fixture is wrong: passive is already %s", got)
+	}
+
+	tests := []struct {
+		name             string
+		stream, function byte
+	}{
+		{"S1F1 are you there", 1, 1},
+		{"S2F41 remote command", 2, 41},
+		{"S1F17 request online", 1, 17},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := NewDataMessage(0x0001, tc.stream, tc.function, true, 0, []byte{0x01, 0x00})
+			msg.Header.SystemID = 4000 + uint32(tc.function)
+			if err := active.writeMessage(msg); err != nil {
+				t.Fatalf("send: %v", err)
+			}
+
+			// The message must never reach the application inbound queue.
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			received, err := passive.ReceiveMessage(ctx)
+			if err == nil {
+				t.Fatalf("unselected data message was delivered: S%dF%d",
+					received.Header.Stream, received.Header.Function)
+			}
+		})
+	}
+}
+
+// TestDataMessageBeforeSelectReplies checks that the rejection is a Reject.req
+// carrying the "entity not selected" reason, not a silent drop.
+func TestDataMessageBeforeSelectReplies(t *testing.T) {
+	logger := slog.Default()
+	active, passive := setupConnectedUnselectedPair(t, logger, 0)
+	defer active.Close()
+	defer passive.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	msg := NewDataMessage(0x0001, 2, 41, true, 0, []byte{0x01, 0x00})
+	msg.Header.SystemID = 7777
+
+	rsp, err := active.sendAndWait(ctx, msg, 2*time.Second)
+	if err != nil {
+		t.Fatalf("expected a Reject.req, got error: %v", err)
+	}
+	if rsp.Header.SType != STypeRejectReq {
+		t.Errorf("SType: got %s, want Reject.req", rsp.Header.SType)
+	}
+	if rsp.Header.Stream != byte(STypeDataMessage) {
+		t.Errorf("offending SType byte: got %d, want %d", rsp.Header.Stream, byte(STypeDataMessage))
+	}
+	if rsp.Header.Function != RejectReasonEntityNotSelected {
+		t.Errorf("reason: got %d, want %d (entity not selected)",
+			rsp.Header.Function, RejectReasonEntityNotSelected)
+	}
+}
+
+// TestDataMessageAfterSelectAccepted guards against the precondition being so
+// strict that normal traffic stops flowing.
+func TestDataMessageAfterSelectAccepted(t *testing.T) {
+	logger := slog.Default()
+	active, passive := setupConnectedPair(t, logger)
+	defer active.Close()
+	defer passive.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	msg := NewDataMessage(0x0001, 1, 1, true, 0, []byte{0x01, 0x00})
+	msg.Header.SystemID = 8888
+	if err := active.writeMessage(msg); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	received, err := passive.ReceiveMessage(ctx)
+	if err != nil {
+		t.Fatalf("selected data message should be delivered: %v", err)
+	}
+	if received.Header.Stream != 1 || received.Header.Function != 1 {
+		t.Errorf("got S%dF%d, want S1F1", received.Header.Stream, received.Header.Function)
+	}
+}
+
+// TestT7NotSelectedTimeout covers the T7 not-selected timeout, which
+// Config documented but never enforced.
+func TestT7NotSelectedTimeout(t *testing.T) {
+	logger := slog.Default()
+	active, passive := setupConnectedUnselectedPair(t, logger, 200*time.Millisecond)
+	defer active.Close()
+	defer passive.Close()
+
+	select {
+	case <-passive.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatalf("T7 did not close the never-selected connection (state=%s)", passive.State())
+	}
+
+	if got := passive.State(); got != transport.StateDisconnected {
+		t.Errorf("state after T7: got %s, want Disconnected", got)
+	}
+}
+
+// TestT7DoesNotCloseSelectedSession checks the timer stands down once Select
+// completes, so a healthy session is not dropped.
+func TestT7DoesNotCloseSelectedSession(t *testing.T) {
+	logger := slog.Default()
+
+	passiveCfg := DefaultConfig("127.0.0.1:0", RolePassive, 0x0001)
+	passiveCfg.LinktestInterval = 0
+	passiveCfg.T7 = 200 * time.Millisecond
+	passive := NewSession(passiveCfg, logger)
+	defer passive.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := passive.Connect(ctx); err != nil {
+		t.Fatalf("passive connect: %v", err)
+	}
+
+	activeCfg := DefaultConfig(passive.Addr().String(), RoleActive, 0x0001)
+	activeCfg.LinktestInterval = 0
+	activeCfg.T7 = 0
+	active := NewSession(activeCfg, logger)
+	defer active.Close()
+
+	if err := active.Connect(ctx); err != nil {
+		t.Fatalf("active connect: %v", err)
+	}
+	if err := active.Select(ctx); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond) // Well past T7.
+
+	if got := passive.State(); got != transport.StateSelected {
+		t.Errorf("selected session was closed by T7: state=%s", got)
+	}
+}
+
+// TestT7DisabledWhenZero documents that T7 <= 0 turns the timeout off.
+func TestT7DisabledWhenZero(t *testing.T) {
+	logger := slog.Default()
+	active, passive := setupConnectedUnselectedPair(t, logger, 0)
+	defer active.Close()
+	defer passive.Close()
+
+	time.Sleep(300 * time.Millisecond)
+
+	if got := passive.State(); got == transport.StateDisconnected {
+		t.Error("T7=0 should leave the connection open")
+	}
+}
