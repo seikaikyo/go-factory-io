@@ -1,6 +1,7 @@
 module github.com/dashfactory/go-factory-io
 
 go 1.26.1
+toolchain go1.26.7
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
