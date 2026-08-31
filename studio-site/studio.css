@@ -280,3 +280,42 @@ textarea.editor:focus { border-color: var(--accent); }
   .dash-row { grid-template-columns: 1fr !important; }
   .dash-action-row { grid-template-columns: 1fr; }
 }
+
+/* --- 後端冷啟動提示 --- */
+/* Render 上的後端閒置會休眠，第一個請求要等 30 到 60 秒。沒有這個提示時
+   畫面只有紅字 DISCONNECTED，使用者會以為服務掛了。 */
+.cold-start-banner {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  padding: 6px 14px;
+  background: rgba(30, 41, 59, 0.94);
+  color: #f1f5f9;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  font-size: 12.5px;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.cold-start-banner[hidden] { display: none; }
+.cold-start-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fbbf24;
+  flex: none;
+  animation: cold-start-pulse 1.2s ease-in-out infinite;
+}
+@keyframes cold-start-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+@media (max-width: 640px) {
+  .cold-start-banner { font-size: 12px; padding: 5px 12px; max-width: 92vw; text-align: center; }
+}

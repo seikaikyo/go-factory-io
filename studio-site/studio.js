@@ -163,8 +163,43 @@ function loadTemplate(btn) {
   }
 }
 
+// --- 後端冷啟動提示 ---
+// 後端跑在 Render 上，閒置會休眠，第一個請求要等 30 到 60 秒才醒。
+// 請求 pending 超過門檻就顯示橫幅，全部結束就收起來。門檻設 1.2 秒是
+// 為了不讓正常的 0.2 秒請求閃一下橫幅。
+const COLD_START_THRESHOLD_MS = 1200;
+let pendingRequests = 0;
+let warmupTimer = null;
+
+function setColdStartBanner(visible) {
+  const el = document.getElementById('cold-start-banner');
+  if (el) el.hidden = !visible;
+}
+
+function beginRequest() {
+  pendingRequests++;
+  if (warmupTimer === null) {
+    warmupTimer = setTimeout(() => {
+      warmupTimer = null;
+      if (pendingRequests > 0) setColdStartBanner(true);
+    }, COLD_START_THRESHOLD_MS);
+  }
+}
+
+function endRequest() {
+  pendingRequests = Math.max(0, pendingRequests - 1);
+  if (pendingRequests === 0) {
+    if (warmupTimer !== null) {
+      clearTimeout(warmupTimer);
+      warmupTimer = null;
+    }
+    setColdStartBanner(false);
+  }
+}
+
 // --- REST API ---
 async function apiGet(path) {
+  beginRequest();
   try {
     const resp = await fetch(API_BASE + path);
     const data = await resp.json();
@@ -172,10 +207,13 @@ async function apiGet(path) {
   } catch (e) {
     setConnectionStatus(false);
     return null;
+  } finally {
+    endRequest();
   }
 }
 
 async function apiPost(path, body) {
+  beginRequest();
   try {
     const resp = await fetch(API_BASE + path, {
       method: 'POST',
@@ -186,6 +224,8 @@ async function apiPost(path, body) {
     return data.success ? data.data : null;
   } catch (e) {
     return null;
+  } finally {
+    endRequest();
   }
 }
 

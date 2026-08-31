@@ -28,6 +28,13 @@
 </head>
 <body>
 
+<!-- 後端在 Render 上會閒置休眠，冷啟動約需一分鐘。等待期間顯示這個橫幅，
+     否則畫面只剩紅字 DISCONNECTED，看起來像壞掉而不是在等。 -->
+<div id="cold-start-banner" class="cold-start-banner" role="status" aria-live="polite" hidden>
+  <span class="cold-start-dot" aria-hidden="true"></span>
+  <span class="cold-start-text" data-i18n="warming.backendStarting">Backend waking up, this can take up to a minute</span>
+</div>
+
 <div class="topbar">
   <div class="topbar-left">
     <div class="logo">SECSGEM <span>Studio</span></div>
