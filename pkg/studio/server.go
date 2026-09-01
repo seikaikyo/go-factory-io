@@ -43,6 +43,13 @@ type Config struct {
 	// LoopbackOnly is set.
 	Token string
 
+	// SimulatorDemo relaxes the token requirement for equipment-driving
+	// commands when the server is backed by the embedded simulator and no
+	// real equipment is reachable. Intended for public demos where the only
+	// thing a visitor can drive is a simulated device inside this process.
+	// Never set it when EquipmentAddr points at a real tool.
+	SimulatorDemo bool
+
 	// LoopbackOnly records that the HTTP listener is bound to loopback and is
 	// therefore unreachable from the network. It relaxes the token
 	// requirement for the equipment-driving commands so `secsgem studio`
@@ -54,9 +61,9 @@ type Config struct {
 
 // Server serves the SECSGEM Studio web UI.
 type Server struct {
-	logger  *slog.Logger
-	config  Config
-	mux     *http.ServeMux
+	logger *slog.Logger
+	config Config
+	mux    *http.ServeMux
 
 	// Core components
 	schemas  *validator.SchemaRegistry
@@ -77,13 +84,13 @@ type Server struct {
 
 // TraceEntry records one message for the trace view.
 type TraceEntry struct {
-	ID         uint64                      `json:"id"`
-	Timestamp  time.Time                   `json:"timestamp"`
-	Direction  string                      `json:"direction"` // "tx" or "rx"
-	Stream     byte                        `json:"stream"`
-	Function   byte                        `json:"function"`
-	WBit       bool                        `json:"wbit"`
-	BodySML    string                      `json:"bodySml"`
+	ID         uint64                       `json:"id"`
+	Timestamp  time.Time                    `json:"timestamp"`
+	Direction  string                       `json:"direction"` // "tx" or "rx"
+	Stream     byte                         `json:"stream"`
+	Function   byte                         `json:"function"`
+	WBit       bool                         `json:"wbit"`
+	BodySML    string                       `json:"bodySml"`
 	Validation []validator.ValidationResult `json:"validation"`
 }
 
@@ -310,9 +317,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	defer c.Close(websocket.StatusNormalClosure, "")
 
 	// A socket authenticated with the token may drive the equipment, and so
-	// may a loopback-bound listener that nothing off-box can reach. Any other
+	// may a loopback-bound listener that nothing off-box can reach. A public
+	// demo backed only by the embedded simulator may too, because the worst a
+	// visitor can reach is a simulated device inside this process. Any other
 	// case is read-only.
-	privileged := s.config.Token != "" || s.config.LoopbackOnly
+	privileged := s.config.Token != "" || s.config.LoopbackOnly || s.simulatorDemo()
 
 	s.clientsMu.Lock()
 	s.clients[c] = struct{}{}
@@ -571,4 +580,11 @@ func (s *Server) handleTrace(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"data":    entries,
 	})
+}
+
+// simulatorDemo reports whether the equipment-driving relaxation applies: the
+// caller asked for demo mode and no external equipment address is configured,
+// so the only reachable device is the embedded simulator.
+func (s *Server) simulatorDemo() bool {
+	return s.config.SimulatorDemo && s.config.EquipmentAddr == ""
 }
