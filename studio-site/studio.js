@@ -1,7 +1,7 @@
 'use strict';
 
 // Backend: dashai-api Python simulator
-const API_BASE = 'https://dashai-api.onrender.com/factory/api/v1/equipment/studio';
+const API_BASE = '/api/backend/api/factory/api/v1/equipment/studio';
 
 // --- HTML escaping ---
 // Everything rendered below arrives from the remote API: SECS-II ASCII

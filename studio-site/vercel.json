@@ -1,4 +1,5 @@
 {
+  "functions": { "api/backend/**/*.ts": { "maxDuration": 120 } },
   "redirects": [
     {
       "source": "/:path*",
