@@ -1,5 +1,8 @@
 {
   "functions": { "api/backend/**/*.ts": { "maxDuration": 120 } },
+  "rewrites": [
+    { "source": "/api/backend/:alias/:path*", "destination": "/api/backend?alias=:alias&path=:path*" }
+  ],
   "redirects": [
     {
       "source": "/:path*",

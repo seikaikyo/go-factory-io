@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /* 後端只收代理流量。瀏覽器打同源 /api/backend/<alias>/<path>，
+   vercel.json 的 rewrite 把它改寫成 /api/backend?alias=&path= 進到這裡
+   （Vercel 函式的動態段只吃單一路徑段，所以不用 [...path] 檔名），
    這裡帶 X-Origin-Key 轉給 Render。alias 對照表在 BACKEND_ORIGINS
    （alias=origin 逗號分隔），金鑰在 ORIGIN_KEY，兩個都是伺服器端變數。
    回應用串流轉送，chat 的 SSE 才不會被整包緩衝。 */
@@ -41,7 +43,10 @@ export default async function handler(req: IncomingMessage & { query?: Record<st
   }
   const incoming = new URL(req.url ?? "/", "http://local");
   const url = new URL(`${origin}/${parts.join("/")}`);
-  url.search = incoming.search;
+  const search = new URLSearchParams(incoming.search);
+  search.delete("alias");
+  search.delete("path");
+  url.search = search.toString();
 
   const headers = new Headers();
   for (const h of PASS_REQUEST) {
