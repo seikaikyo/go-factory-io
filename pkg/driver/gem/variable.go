@@ -64,7 +64,73 @@ func (vs *VariableStore) SetEC(ecid uint32, value interface{}) error {
 	if !ok {
 		return fmt.Errorf("gem: unknown ECID %d", ecid)
 	}
+	if err := checkECRange(ec, value); err != nil {
+		return err
+	}
 	ec.Value = value
+	return nil
+}
+
+// numeric coerces the Go numeric kinds an EquipmentConstant can hold into a
+// float64 for comparison. Anything else reports ok false; a non-numeric
+// constant simply has no range to enforce.
+func numeric(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	}
+	return 0, false
+}
+
+// checkECRange enforces MinValue and MaxValue when the constant declares them.
+//
+// These bounds were already part of the type and are reported to the host in
+// S2F30, but nothing enforced them on write: SetEC took any value for any
+// known ECID. An equipment constant is a process parameter, so an out of range
+// write is a physical instruction, not a bad record.
+//
+// A constant that declares no bounds keeps its previous behaviour: anything
+// goes. Enforcing a bound we do not have would break every existing
+// definition, none of which sets them.
+func checkECRange(ec *EquipmentConstant, value interface{}) error {
+	v, ok := numeric(value)
+	if !ok {
+		// A non-numeric value cannot be compared against a numeric bound.
+		// Reject it only when the constant declares one, since that says the
+		// constant is numeric.
+		if ec.MinValue != nil || ec.MaxValue != nil {
+			return fmt.Errorf("gem: ECID %d takes a numeric value, got %T", ec.ECID, value)
+		}
+		return nil
+	}
+	if min, ok := numeric(ec.MinValue); ok && v < min {
+		return fmt.Errorf("gem: ECID %d value %v below minimum %v", ec.ECID, value, ec.MinValue)
+	}
+	if max, ok := numeric(ec.MaxValue); ok && v > max {
+		return fmt.Errorf("gem: ECID %d value %v above maximum %v", ec.ECID, value, ec.MaxValue)
+	}
 	return nil
 }
 

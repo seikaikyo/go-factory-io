@@ -219,11 +219,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"data": map[string]interface{}{
-			"commState":    state.CommState().String(),
-			"controlState": state.ControlState().String(),
+			"commState":     state.CommState().String(),
+			"controlState":  state.ControlState().String(),
 			"communicating": state.IsCommunicating(),
-			"online":       state.IsOnline(),
-			"transport":    s.session.State().String(),
+			"online":        state.IsOnline(),
+			"transport":     s.session.State().String(),
 		},
 	})
 }
@@ -287,6 +287,10 @@ func (s *Server) handleListEC(w http.ResponseWriter, r *http.Request) {
 			"name":  ec.Name,
 			"value": ec.Value,
 			"units": ec.Units,
+			// 範圍以前只在 S2F30 回報，REST 這側看不到，所以呼叫端無從得知
+			// 界線在哪。沒有宣告範圍的常數這兩欄是 null。
+			"min": ec.MinValue,
+			"max": ec.MaxValue,
 		})
 	}
 
@@ -316,6 +320,8 @@ func (s *Server) handleGetEC(w http.ResponseWriter, r *http.Request) {
 			"name":  ec.Name,
 			"value": ec.Value,
 			"units": ec.Units,
+			"min":   ec.MinValue,
+			"max":   ec.MaxValue,
 		},
 	})
 }
@@ -336,6 +342,12 @@ func (s *Server) handleSetEC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.handler.Variables().SetEC(ecid, body.Value); err != nil {
+		// 未知的 ECID 是 404，值不合範圍是 400。以前一律回 404，
+		// 呼叫端分不出「沒這個常數」與「這個值不行」。
+		if _, known := s.handler.Variables().GetEC(ecid); known {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
