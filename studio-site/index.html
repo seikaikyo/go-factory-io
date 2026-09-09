@@ -1,6 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script src="https://browser.sentry-cdn.com/10.73.0/bundle.tracing.min.js" crossorigin="anonymous"></script>
+<script>
+  if (window.Sentry) {
+    Sentry.init({
+      dsn: "https://f20f38aa717c78d4354aaa31ddc35fc0@o4511162203766784.ingest.us.sentry.io/4512056327405568",
+      environment: "production",
+      tracesSampleRate: 0.2,
+      sendDefaultPii: false,
+    });
+  }
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SECSGEM Studio — Equipment Simulator + Chat + Raw Protocol Editor</title>
