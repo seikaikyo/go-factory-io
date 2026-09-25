@@ -749,4 +749,6 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => applyLang(btn.dataset.lang));
   });
   applyLang(currentLang);
+  // lang-boot.js 在字換好之前先把 body 藏起來，這裡換完才顯示
+  document.documentElement.classList.remove('i18n-pending');
 });
