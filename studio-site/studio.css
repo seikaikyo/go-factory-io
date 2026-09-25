@@ -319,3 +319,7 @@ textarea.editor:focus { border-color: var(--accent); }
 @media (max-width: 640px) {
   .cold-start-banner { font-size: 12px; padding: 5px 12px; max-width: 92vw; text-align: center; }
 }
+
+/* --- 非英文首次繪製 --- */
+/* lang-boot.js 在 i18n.js 換好字之前掛上這個 class，避免先畫英文再換字造成版面位移 */
+html.i18n-pending body { visibility: hidden; }
