@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -475,6 +476,12 @@ func (s *Session) sendAndWait(ctx context.Context, msg *Message, timeout time.Du
 
 func (s *Session) readLoop(ctx context.Context) {
 	defer func() {
+		// A panic while handling one message ends this connection only;
+		// the deferred Close below tears it down instead of the process.
+		if r := recover(); r != nil {
+			s.logger.Error("HSMS read loop panic, closing connection",
+				"remote", s.remoteAddr(), "panic", r, "stack", string(debug.Stack()))
+		}
 		s.logger.Info("HSMS read loop exiting")
 		if !s.closed.Load() {
 			s.Close()
