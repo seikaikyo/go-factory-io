@@ -6,9 +6,17 @@ import (
 	"math"
 )
 
+// maxDecodeDepth caps how many lists may be nested inside one another.
+// SEMI E5 messages in practice nest well under ten levels (S6F11 event
+// reports and S16 process job bodies are among the deepest), so 64 leaves
+// wide headroom. The cap keeps the recursive decoder far from the goroutine
+// stack limit: past that limit Go aborts the process with a fatal error that
+// recover cannot catch.
+const maxDecodeDepth = 64
+
 // Decode deserializes SECS-II binary data into an Item tree.
 func Decode(data []byte) (*Item, error) {
-	item, n, err := decodeItem(data, 0)
+	item, n, err := decodeItem(data, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +31,7 @@ func DecodeMulti(data []byte) ([]*Item, error) {
 	var items []*Item
 	offset := 0
 	for offset < len(data) {
-		item, n, err := decodeItem(data, offset)
+		item, n, err := decodeItem(data, offset, 0)
 		if err != nil {
 			return nil, fmt.Errorf("at offset %d: %w", offset, err)
 		}
@@ -34,7 +42,8 @@ func DecodeMulti(data []byte) ([]*Item, error) {
 }
 
 // decodeItem decodes one item starting at offset, returns the item and the new offset.
-func decodeItem(data []byte, offset int) (*Item, int, error) {
+// depth is the number of lists that enclose the item.
+func decodeItem(data []byte, offset, depth int) (*Item, int, error) {
 	if offset >= len(data) {
 		return nil, offset, fmt.Errorf("unexpected end of data at offset %d", offset)
 	}
@@ -68,7 +77,7 @@ func decodeItem(data []byte, offset int) (*Item, int, error) {
 	// Decode based on format
 	switch format {
 	case FormatList:
-		return decodeList(data, offset, dataLen)
+		return decodeList(data, offset, dataLen, depth+1)
 	case FormatASCII:
 		return decodeASCII(data, offset, dataLen)
 	case FormatBinary:
@@ -100,12 +109,21 @@ func decodeItem(data []byte, offset int) (*Item, int, error) {
 	}
 }
 
-func decodeList(data []byte, offset, count int) (*Item, int, error) {
+func decodeList(data []byte, offset, count, depth int) (*Item, int, error) {
+	if depth > maxDecodeDepth {
+		return nil, offset, fmt.Errorf("list nesting depth exceeds %d at offset %d", maxDecodeDepth, offset)
+	}
+	// Each child takes at least two bytes (format byte and one length byte),
+	// so a count the remaining data cannot hold is rejected before the slice
+	// is allocated.
+	if count > (len(data)-offset)/2 {
+		return nil, offset, fmt.Errorf("list declares %d items but only %d bytes remain at offset %d", count, len(data)-offset, offset)
+	}
 	items := make([]interface{}, count)
 	var err error
 	for i := range count {
 		var child *Item
-		child, offset, err = decodeItem(data, offset)
+		child, offset, err = decodeItem(data, offset, depth)
 		if err != nil {
 			return nil, offset, fmt.Errorf("list element %d: %w", i, err)
 		}
