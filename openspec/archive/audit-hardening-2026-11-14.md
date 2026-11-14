@@ -1,7 +1,7 @@
 # 對外輸入的防護加固（2026-11-14 安全檢查）
 
 - **type**: fix
-- **status**: in progress
+- **status**: completed
 - **建立日期**: 2026-11-14
 
 ## 背景
@@ -26,10 +26,10 @@
 
 ### 3. 訊息處理的 panic 不再結束行程
 
-`pkg/driver/gem/handler.go`、`pkg/transport/hsms/session.go`、`examples/simulator/simulator.go`
+`pkg/driver/gem/handler.go`、`pkg/transport/hsms/session.go`
 
 - 原本：整個 repo 沒有 recover，處理單一訊息時的 panic 會結束整個行程。
-- 現在：`Handler.HandleMessage` 攔下 panic，轉成錯誤回傳、記錄日誌與安全事件，並關閉該訊息所屬的 session；HSMS 讀取迴圈與模擬器的訊息迴圈也加 recover，只關閉該連線。
+- 現在：`Handler.HandleMessage` 攔下 panic，轉成錯誤回傳、記錄日誌與安全事件，並關閉該訊息所屬的 session；HSMS 讀取迴圈也加 recover，只關閉該連線。
 
 ### 4. `secsgem simulate` 的 REST API 與 `/metrics`
 
@@ -88,7 +88,6 @@
    - `pkg/driver/gem`：空 ID 與非清單本體不 panic；S1F3、S2F13 空 ID 回零長度項目；自訂處理器 panic 轉成錯誤並關閉 session。
    - `pkg/message/secs2`：超過上限的巢狀回錯誤、等於上限可解碼；宣告項數過大回錯誤且不先配置大量記憶體。
    - `pkg/transport/hsms`：讀取迴圈內的 panic 只關閉該 session（子程序驗證行程存活）。
-   - `examples/simulator`：處理器 panic 後模擬器行程存活（子程序驗證）。
    - `cmd/secsgem`：寫入端點、Host、Content-Type、`/metrics` 的認證。
    - `pkg/studio`：loopback Host 檢查、trace 上限、WebSocket 大小與速率上限、demo 拒絕 `disconnect`、`clear_trace` 需特權。
 2. `FuzzDecode` 本機短跑 60 秒。
