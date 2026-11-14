@@ -11,9 +11,11 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -201,11 +203,7 @@ func runSimulator(logger *slog.Logger) {
 		rest.CORS{AllowedOrigins: origins})
 	collector := metrics.NewCollector(*model)
 
-	mux := http.NewServeMux()
-	mux.Handle("/", apiServer.Handler())
-	mux.Handle("/metrics", collector.Handler())
-
-	httpSrv := &http.Server{Addr: *apiAddr, Handler: mux}
+	httpSrv := &http.Server{Addr: *apiAddr, Handler: newAPIHandler(apiServer.Handler(), collector.Handler(), readToken, writeToken)}
 	go func() {
 		logger.Info("REST API + metrics listening", "address", *apiAddr)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -226,6 +224,68 @@ func runSimulator(logger *slog.Logger) {
 	}
 	httpSrv.Shutdown(context.Background())
 	eq.Stop()
+}
+
+// newAPIHandler serves the REST API at / and the Prometheus metrics at
+// /metrics for `secsgem simulate`, and applies the binary's own access rules
+// on top of the REST server's token check:
+//
+//   - With no write token the write endpoints are closed, as the startup
+//     message says.
+//   - The write endpoints accept only application/json, which a browser
+//     cannot send cross-site without a preflight.
+//   - With no token at all (allowed only on a loopback bind) the Host header
+//     must name loopback, so a page that re-points its own hostname at
+//     127.0.0.1 is refused.
+//   - With a token configured, /metrics needs the read or the write token.
+func newAPIHandler(api, metricsHandler http.Handler, readToken, writeToken string) http.Handler {
+	anyToken := readToken != "" || writeToken != ""
+
+	metricsGuarded := metricsHandler
+	if anyToken {
+		metricsGuarded = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			presented, ok := security.BearerToken(r.Header.Get("Authorization"))
+			if !ok || (!security.CompareToken(readToken, presented) && !security.CompareToken(writeToken, presented)) {
+				http.Error(w, "invalid or missing bearer token", http.StatusUnauthorized)
+				return
+			}
+			metricsHandler.ServeHTTP(w, r)
+		})
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/", api)
+	mux.Handle("/metrics", metricsGuarded)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !anyToken && !security.IsLoopbackListen(r.Host) {
+			http.Error(w, "host not allowed", http.StatusForbidden)
+			return
+		}
+		if isSimulateWrite(r) {
+			if writeToken == "" {
+				http.Error(w, "write endpoints are closed: no write token configured", http.StatusForbidden)
+				return
+			}
+			if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+				http.Error(w, "write endpoints accept application/json only", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+// isSimulateWrite reports whether r targets one of the REST endpoints that
+// change equipment state.
+func isSimulateWrite(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodPut:
+		return strings.HasPrefix(r.URL.Path, "/api/ec/")
+	case http.MethodPost:
+		return r.URL.Path == "/api/command"
+	}
+	return false
 }
 
 func runConnect(logger *slog.Logger) {
