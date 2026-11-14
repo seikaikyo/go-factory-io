@@ -59,6 +59,18 @@ type Config struct {
 	LoopbackOnly bool
 }
 
+// Resource limits for the trace and the WebSocket. The trace is shared by
+// every viewer and lives for the life of the process, and the socket is the
+// only input a visitor controls, so both are bounded.
+const (
+	maxTraceEntries   = 500      // newest entries kept; older ones are dropped
+	maxTraceBytes     = 4 << 20  // SML text kept across all entries
+	maxTraceBodyBytes = 64 << 10 // SML text kept for a single entry
+	maxWSMessageBytes = 16 << 10 // largest frame a client may send
+	wsMessageRate     = 10       // sustained client messages per second per socket
+	wsMessageBurst    = 20       // short burst allowed above the sustained rate
+)
+
 // Server serves the SECSGEM Studio web UI.
 type Server struct {
 	logger *slog.Logger
@@ -76,10 +88,11 @@ type Server struct {
 	clientsMu sync.RWMutex
 	clients   map[*websocket.Conn]struct{}
 
-	// Trace log
-	traceMu sync.Mutex
-	trace   []TraceEntry
-	traceID uint64
+	// Trace log, bounded by maxTraceEntries and maxTraceBytes
+	traceMu    sync.Mutex
+	trace      []TraceEntry
+	traceID    uint64
+	traceBytes int
 }
 
 // TraceEntry records one message for the trace view.
@@ -167,6 +180,10 @@ func (s *Server) cors(next http.HandlerFunc) http.HandlerFunc {
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.config.Token == "" {
+			if !s.hostAllowed(r) {
+				http.Error(w, "host not allowed", http.StatusForbidden)
+				return
+			}
 			next(w, r)
 			return
 		}
@@ -181,6 +198,18 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// hostAllowed applies the loopback exemption only to requests that name
+// loopback in the Host header. A page on another site can re-point its own
+// hostname at 127.0.0.1; its requests then pass the same-origin check
+// because Origin and Host both carry that hostname, but the Host is not a
+// loopback name.
+func (s *Server) hostAllowed(r *http.Request) bool {
+	if s.config.Token != "" || !s.config.LoopbackOnly {
+		return true
+	}
+	return security.IsLoopbackListen(r.Host)
 }
 
 // tokenOK validates the request credential against the configured token.
@@ -253,6 +282,9 @@ func (s *Server) onMessage(dir simulator.Direction, stream, function byte, body 
 	if body != nil {
 		bodySML = body.String()
 	}
+	if len(bodySML) > maxTraceBodyBytes {
+		bodySML = bodySML[:maxTraceBodyBytes] + " ... (truncated)"
+	}
 
 	s.traceMu.Lock()
 	s.traceID++
@@ -266,6 +298,12 @@ func (s *Server) onMessage(dir simulator.Direction, stream, function byte, body 
 		Validation: results,
 	}
 	s.trace = append(s.trace, entry)
+	s.traceBytes += len(entry.BodySML)
+	for len(s.trace) > maxTraceEntries || (s.traceBytes > maxTraceBytes && len(s.trace) > 1) {
+		s.traceBytes -= len(s.trace[0].BodySML)
+		s.trace[0] = TraceEntry{} // release the dropped entry's strings
+		s.trace = s.trace[1:]
+	}
 	s.traceMu.Unlock()
 
 	// Broadcast to WebSocket clients
@@ -303,6 +341,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if !s.hostAllowed(r) {
+		s.logger.Warn("WebSocket rejected: non-loopback Host on a loopback-only studio",
+			"remote", r.RemoteAddr, "host", r.Host)
+		http.Error(w, "host not allowed", http.StatusForbidden)
+		return
+	}
 
 	// No InsecureSkipVerify: the library's default is same-origin, and
 	// OriginPatterns widens that only to explicitly configured hosts.
@@ -315,6 +359,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer c.Close(websocket.StatusNormalClosure, "")
+	c.SetReadLimit(maxWSMessageBytes)
+	limiter := security.NewRateLimiter(wsMessageRate, wsMessageBurst)
 
 	// A socket authenticated with the token may drive the equipment, and so
 	// may a loopback-bound listener that nothing off-box can reach. A public
@@ -338,6 +384,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, data, err := c.Read(r.Context())
 		if err != nil {
+			return
+		}
+		if !limiter.Allow() {
+			s.logger.Warn("WebSocket closed: message rate limit exceeded",
+				"remote", r.RemoteAddr, "rate", wsMessageRate)
+			c.Close(websocket.StatusPolicyViolation, "message rate limit exceeded")
 			return
 		}
 		var msg WSMessage
@@ -366,7 +418,9 @@ func IsMutatingWSCommand(cmd string) bool {
 }
 
 func (s *Server) handleWSCommand(ctx context.Context, c *websocket.Conn, msg WSMessage, privileged bool) {
-	if IsMutatingWSCommand(msg.Type) && !privileged {
+	// clear_trace does not drive the equipment, but it wipes the trace every
+	// other viewer is reading, so it needs the same privilege.
+	if (IsMutatingWSCommand(msg.Type) || msg.Type == "clear_trace") && !privileged {
 		s.logger.Warn("WebSocket command refused: studio token not configured", "command", msg.Type)
 		s.sendTo(c, "error", map[string]string{
 			"message": "command '" + msg.Type + "' requires the studio token; start with --studio-token or " +
@@ -381,7 +435,7 @@ func (s *Server) handleWSCommand(ctx context.Context, c *websocket.Conn, msg WSM
 	case "quick_send":
 		s.handleWSQuickSend(ctx, msg.Data)
 	case "fault":
-		s.handleWSFault(ctx, msg.Data)
+		s.handleWSFault(ctx, c, msg.Data)
 	case "run_script":
 		s.handleWSRunScript(ctx, c, msg.Data)
 	case "get_report":
@@ -391,6 +445,7 @@ func (s *Server) handleWSCommand(ctx context.Context, c *websocket.Conn, msg WSM
 	case "clear_trace":
 		s.traceMu.Lock()
 		s.trace = nil
+		s.traceBytes = 0
 		s.traceMu.Unlock()
 	}
 }
@@ -481,11 +536,19 @@ func (s *Server) handleWSQuickSend(ctx context.Context, data json.RawMessage) {
 	}
 }
 
-func (s *Server) handleWSFault(ctx context.Context, data json.RawMessage) {
+func (s *Server) handleWSFault(ctx context.Context, c *websocket.Conn, data json.RawMessage) {
 	var cmd struct {
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal(data, &cmd); err != nil {
+		return
+	}
+	// The studio never reconnects its host session, so in a public demo a
+	// disconnect fault would end the demo for every visitor until restart.
+	if s.simulatorDemo() && simulator.FaultType(cmd.Type) == simulator.FaultDisconnect {
+		s.sendTo(c, "error", map[string]string{
+			"message": "fault 'disconnect' is disabled in the simulator demo",
+		})
 		return
 	}
 	if s.host == nil {
