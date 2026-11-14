@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 
 	"github.com/dashfactory/go-factory-io/pkg/message/secs2"
 	"github.com/dashfactory/go-factory-io/pkg/security"
@@ -157,13 +158,32 @@ func (h *Handler) OnMessage(stream, function byte, fn MessageHandlerFunc) {
 }
 
 // HandleMessage processes an incoming HSMS data message and sends a reply.
-func (h *Handler) HandleMessage(ctx context.Context, msg *hsms.Message) error {
+//
+// A panic raised while handling the message (a built-in handler or one
+// registered with OnMessage) is recovered and returned as an error. The
+// session that carried the message is closed, because its GEM state can no
+// longer be trusted, but the process keeps running.
+func (h *Handler) HandleMessage(ctx context.Context, msg *hsms.Message) (err error) {
 	if msg.IsControlMessage() {
 		return nil // Control messages handled by HSMS session
 	}
 
 	s := msg.Header.Stream
 	f := msg.Header.Function
+
+	defer func() {
+		if r := recover(); r != nil {
+			h.logger.Error("GEM handler panic, closing session",
+				"stream", s, "function", f, "panic", r, "stack", string(debug.Stack()))
+			err = fmt.Errorf("gem: S%dF%d handler panic: %v", s, f, r)
+			if h.auditor != nil {
+				h.auditor.MalformedMessage(fmt.Sprintf("session:%d", msg.Header.SessionID), err)
+			}
+			if h.session != nil {
+				h.session.Close()
+			}
+		}
+	}()
 
 	h.logger.Debug("GEM received", "stream", s, "function", f, "systemID", msg.Header.SystemID)
 
@@ -195,7 +215,6 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *hsms.Message) error {
 
 	// Built-in message handlers
 	var reply *secs2.Item
-	var err error
 
 	switch {
 	case s == 1 && f == 1: // S1F1: Are You There
@@ -286,12 +305,21 @@ func (h *Handler) handleS1F3(msg *hsms.Message) (*secs2.Item, error) {
 	if err != nil {
 		return nil, err
 	}
+	if body.Format() != secs2.FormatList {
+		return nil, fmt.Errorf("S1F3 body is %s, not a list", body.Format())
+	}
 
 	items := make([]*secs2.Item, body.Len())
 	for i, child := range body.Items() {
 		svids, err := child.ToUint64s()
 		if err != nil {
 			return nil, fmt.Errorf("SVID %d: %w", i, err)
+		}
+		if len(svids) == 0 {
+			// An SVID item with no value cannot name a variable; answer it
+			// like an unknown SVID, with a zero-length item.
+			items[i] = secs2.NewList()
+			continue
 		}
 		val, _ := h.vars.GetSV(uint32(svids[0]))
 		items[i] = valueToItem(val)
@@ -364,11 +392,19 @@ func (h *Handler) handleS2F13(msg *hsms.Message) (*secs2.Item, error) {
 		return nil, err
 	}
 
+	if body.Format() != secs2.FormatList {
+		return nil, fmt.Errorf("S2F13 body is %s, not a list", body.Format())
+	}
+
 	items := make([]*secs2.Item, body.Len())
 	for i, child := range body.Items() {
 		ecids, err := child.ToUint64s()
 		if err != nil {
 			return nil, fmt.Errorf("ECID %d: %w", i, err)
+		}
+		if len(ecids) == 0 {
+			items[i] = secs2.NewList() // Empty for an ECID item with no value
+			continue
 		}
 		ec, ok := h.vars.GetEC(uint32(ecids[0]))
 		if ok {
@@ -388,11 +424,11 @@ func (h *Handler) handleS2F15(msg *hsms.Message) (*secs2.Item, error) {
 	}
 
 	for _, pair := range body.Items() {
-		if pair.Len() < 2 {
+		if pair.Format() != secs2.FormatList || pair.Len() < 2 {
 			continue
 		}
 		ecids, err := pair.ItemAt(0).ToUint64s()
-		if err != nil {
+		if err != nil || len(ecids) == 0 {
 			continue
 		}
 		ecid := uint32(ecids[0])
@@ -429,7 +465,7 @@ func (h *Handler) handleS2F33(msg *hsms.Message) (*secs2.Item, error) {
 		return nil, err
 	}
 
-	if body.Len() < 2 {
+	if body.Format() != secs2.FormatList || body.Len() < 2 {
 		return secs2.NewBinary([]byte{0x01}), nil // DRACK: 1 = error
 	}
 
@@ -442,11 +478,11 @@ func (h *Handler) handleS2F33(msg *hsms.Message) (*secs2.Item, error) {
 	}
 
 	for _, rptDef := range reportList.Items() {
-		if rptDef.Len() < 2 {
+		if rptDef.Format() != secs2.FormatList || rptDef.Len() < 2 {
 			continue
 		}
 		rptids, err := rptDef.ItemAt(0).ToUint64s()
-		if err != nil {
+		if err != nil || len(rptids) == 0 {
 			continue
 		}
 		rptid := uint32(rptids[0])
@@ -460,7 +496,7 @@ func (h *Handler) handleS2F33(msg *hsms.Message) (*secs2.Item, error) {
 		vids := make([]uint32, vidList.Len())
 		for i, vidItem := range vidList.Items() {
 			ids, err := vidItem.ToUint64s()
-			if err != nil {
+			if err != nil || len(ids) == 0 {
 				continue
 			}
 			vids[i] = uint32(ids[0])
@@ -478,18 +514,18 @@ func (h *Handler) handleS2F35(msg *hsms.Message) (*secs2.Item, error) {
 		return nil, err
 	}
 
-	if body.Len() < 2 {
+	if body.Format() != secs2.FormatList || body.Len() < 2 {
 		return secs2.NewBinary([]byte{0x01}), nil // LRACK: 1 = error
 	}
 
 	// body: L,2 { DATAID, L,n { L,2 { CEID, L,m { RPTID... } } } }
 	linkList := body.ItemAt(1)
 	for _, link := range linkList.Items() {
-		if link.Len() < 2 {
+		if link.Format() != secs2.FormatList || link.Len() < 2 {
 			continue
 		}
 		ceids, err := link.ItemAt(0).ToUint64s()
-		if err != nil {
+		if err != nil || len(ceids) == 0 {
 			continue
 		}
 		ceid := uint32(ceids[0])
@@ -498,7 +534,7 @@ func (h *Handler) handleS2F35(msg *hsms.Message) (*secs2.Item, error) {
 		rptids := make([]uint32, rptList.Len())
 		for i, rptItem := range rptList.Items() {
 			ids, err := rptItem.ToUint64s()
-			if err != nil {
+			if err != nil || len(ids) == 0 {
 				continue
 			}
 			rptids[i] = uint32(ids[0])
@@ -516,7 +552,7 @@ func (h *Handler) handleS2F37(msg *hsms.Message) (*secs2.Item, error) {
 		return nil, err
 	}
 
-	if body.Len() < 2 {
+	if body.Format() != secs2.FormatList || body.Len() < 2 {
 		return secs2.NewBinary([]byte{0x01}), nil // ERACK: 1 = error
 	}
 
@@ -534,7 +570,7 @@ func (h *Handler) handleS2F37(msg *hsms.Message) (*secs2.Item, error) {
 	} else {
 		for _, ceidItem := range ceidList.Items() {
 			ceids, err := ceidItem.ToUint64s()
-			if err != nil {
+			if err != nil || len(ceids) == 0 {
 				continue
 			}
 			h.events.EnableEvent(uint32(ceids[0]), enabled)
@@ -553,7 +589,7 @@ func (h *Handler) handleS2F41(msg *hsms.Message) (*secs2.Item, error) {
 		return nil, err
 	}
 
-	if body.Len() < 2 {
+	if body.Format() != secs2.FormatList || body.Len() < 2 {
 		return secs2.NewList(
 			secs2.NewBinary([]byte{byte(CommandParameterError)}),
 			secs2.NewList(),
@@ -572,7 +608,7 @@ func (h *Handler) handleS2F41(msg *hsms.Message) (*secs2.Item, error) {
 	var params []CommandParam
 	paramList := body.ItemAt(1)
 	for _, p := range paramList.Items() {
-		if p.Len() < 2 {
+		if p.Format() != secs2.FormatList || p.Len() < 2 {
 			continue
 		}
 		name, _ := p.ItemAt(0).ToASCII()
@@ -600,7 +636,7 @@ func (h *Handler) handleS5F3(msg *hsms.Message) (*secs2.Item, error) {
 		return nil, err
 	}
 
-	if body.Len() < 2 {
+	if body.Format() != secs2.FormatList || body.Len() < 2 {
 		return secs2.NewBinary([]byte{0x01}), nil // ACKC5: 1 = error
 	}
 
@@ -612,7 +648,7 @@ func (h *Handler) handleS5F3(msg *hsms.Message) (*secs2.Item, error) {
 	enabled := len(aledBytes) > 0 && aledBytes[0]&0x80 != 0
 
 	alids, err := body.ItemAt(1).ToUint64s()
-	if err != nil {
+	if err != nil || len(alids) == 0 {
 		return secs2.NewBinary([]byte{0x01}), nil
 	}
 
